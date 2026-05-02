@@ -720,127 +720,235 @@ Views.Payroll = {
     if (!isOpen) row.classList.remove('hidden');
   },
 
-  renderDetailPanel(p, idx) {
-    const emp  = State.employees.find(e => e.emp_id === p.emp_id);
-    const days = State.attendanceMap[p.emp_id];
-    const daily  = (emp?.weekly_salary || p.weekly_salary) / 6;
-    const hourly = daily / 9;
-    const shortfallThresh = parseFloat(State.settings.SHORTFALL_THRESHOLD_HOURS || 8.5);
-    const otMinHours      = parseFloat(State.settings.OT_MIN_HOURS || 10);
-    const otRound         = parseInt(State.settings.OT_ROUND_MINUTES || 15);
-    const addLunch        = State.settings.ADD_LUNCH_TO_OT === 'true';
-    const lunchHrs        = parseFloat(State.settings.LUNCH_DURATION_HOURS || 1);
-    const holidayDates    = new Set((State.holidays||[]).map(h => h.date));
+  _dayCalc(day, hourly, settings, holidayDates) {
+    const shortfallThresh = parseFloat(settings.SHORTFALL_THRESHOLD_HOURS || 8.5);
+    const otMinHours      = parseFloat(settings.OT_MIN_HOURS || 10);
+    const otRound         = parseInt(settings.OT_ROUND_MINUTES || 15);
+    const addLunch        = settings.ADD_LUNCH_TO_OT === 'true';
+    const lunchHrs        = parseFloat(settings.LUNCH_DURATION_HOURS || 1);
+    const isSunday        = day.dayName === 'Sunday';
+    const isHoliday       = holidayDates.has(day.date);
+    let otMin = 0, shortfallMin = 0, tag = '', tagStyle = '';
 
-    const noData = !days || !days.length;
-
-    const statusColor = { FD: 'var(--success)', HD: 'var(--warning)', Absent: 'var(--danger)', 'Week Off': 'var(--muted)' };
-
-    const dayRows = noData ? '' : days.map(day => {
-      const isSunday  = day.dayName === 'Sunday';
-      const isHoliday = holidayDates.has(day.date);
-      let otMin = 0, shortfallMin = 0, tag = '';
-
-      if (isSunday) {
-        if (day.totalHours > 0) {
-          otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
-          tag = '<span style="font-size:11px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Sun OT</span>';
-        } else {
-          tag = '<span style="font-size:11px;color:var(--muted)">Off</span>';
-        }
-      } else if (isHoliday) {
-        if (day.status === 'Absent') {
-          tag = '<span style="font-size:11px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:4px">Paid Holiday</span>';
-        } else {
-          otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
-          tag = '<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px">Hol OT</span>';
-        }
-      } else if (day.status === 'FD') {
-        if (day.totalHours >= otMinHours) {
-          otMin = Math.floor((day.totalHours - 9) * 60 / otRound) * otRound;
-          tag = '<span style="font-size:11px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:4px">OT</span>';
-        } else if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
-          shortfallMin = Math.round((9 - day.totalHours) * 60);
-          tag = '<span style="font-size:11px;background:#fee2e2;color:#dc2626;padding:1px 5px;border-radius:4px">Short</span>';
-        }
-      } else if (day.status === 'HD') {
-        shortfallMin = Math.round((9 - day.totalHours) * 60);
-        tag = '<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px">½ Day</span>';
+    if (isSunday) {
+      if (day.totalHours > 0) {
+        otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
+        tag = 'Sun OT'; tagStyle = 'background:#dbeafe;color:#1d4ed8';
+      } else { tag = 'Off'; tagStyle = 'color:var(--muted)'; }
+    } else if (isHoliday) {
+      if (day.status === 'Absent') {
+        tag = 'Paid Holiday'; tagStyle = 'background:#dcfce7;color:#15803d';
+      } else {
+        otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
+        tag = 'Hol OT'; tagStyle = 'background:#fef3c7;color:#92400e';
       }
+    } else if (day.status === 'FD') {
+      if (day.totalHours >= otMinHours) {
+        otMin = Math.floor((day.totalHours - 9) * 60 / otRound) * otRound;
+        tag = 'OT'; tagStyle = 'background:#dcfce7;color:#15803d';
+      } else if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
+        shortfallMin = Math.round((9 - day.totalHours) * 60);
+        tag = 'Short'; tagStyle = 'background:#fee2e2;color:#dc2626';
+      }
+    } else if (day.status === 'HD') {
+      shortfallMin = Math.round((9 - day.totalHours) * 60);
+      tag = '½ Day'; tagStyle = 'background:#fef3c7;color:#92400e';
+    }
+    return { otMin, shortfallMin, otEarn: (otMin/60)*hourly, sfDeduct: (shortfallMin/60)*hourly, tag, tagStyle, isSunday, isHoliday };
+  },
 
-      const otEarn  = (otMin / 60) * hourly;
-      const sfDeduct = (shortfallMin / 60) * hourly;
-      const hrsDisplay = day.totalHours > 0 ? (Math.floor(day.totalHours) + 'h ' + Math.round((day.totalHours%1)*60) + 'm') : '—';
-      const color = statusColor[day.status] || 'var(--text)';
+  renderDetailPanel(p, idx) {
+    const emp          = State.employees.find(e => e.emp_id === p.emp_id);
+    const days         = State.attendanceMap[p.emp_id];
+    const daily        = (emp?.weekly_salary || p.weekly_salary) / 6;
+    const hourly       = daily / 9;
+    const holidayDates = new Set((State.holidays||[]).map(h => h.date));
+    const noData       = !days || !days.length;
+    const locked       = p.status === 'finalized';
 
-      return `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:6px 8px;color:var(--muted);font-size:12px">${day.day}</td>
-        <td style="padding:6px 8px;font-size:12px">${day.dayName.slice(0,3)}</td>
-        <td style="padding:6px 8px;font-weight:600;color:${color};font-size:12px">${day.status}${isHoliday && day.status!=='Absent'?' 🗓':''}</td>
-        <td style="padding:6px 8px;text-align:right;font-size:12px">${hrsDisplay}</td>
-        <td style="padding:6px 8px;text-align:right;font-size:12px;color:var(--success)">${otMin > 0 ? '+'+otMin+'m' : '—'}</td>
-        <td style="padding:6px 8px;text-align:right;font-size:12px;color:var(--danger)">${shortfallMin > 0 ? '-'+shortfallMin+'m' : '—'}</td>
-        <td style="padding:6px 8px;text-align:right;font-size:12px">
-          ${otEarn > 0 ? '<span style="color:var(--success)">+'+fmt(otEarn)+'</span>' : ''}
-          ${sfDeduct > 0 ? '<span style="color:var(--danger)">-'+fmt(sfDeduct)+'</span>' : ''}
-          ${otEarn === 0 && sfDeduct === 0 ? '<span style="color:var(--muted)">—</span>' : ''}
+    const statusColor  = { FD:'var(--success)', HD:'var(--warning)', Absent:'var(--danger)', 'Week Off':'var(--muted)' };
+    const statusOpts   = ['FD','HD','Absent','Week Off'].map(s => `<option value="${s}">${s}</option>`).join('');
+
+    const dayRows = noData ? '' : days.map((day, di) => {
+      const c   = this._dayCalc(day, hourly, State.settings, holidayDates);
+      const hrs = Math.floor(day.totalHours);
+      const mns = Math.round((day.totalHours % 1) * 60);
+      const col = statusColor[day.status] || 'var(--text)';
+      const hrsInput = locked
+        ? `<span style="font-size:12px">${day.totalHours > 0 ? hrs+'h '+mns+'m' : '—'}</span>`
+        : `<input type="number" id="dh-${idx}-${di}" value="${hrs}" min="0" max="23"
+             style="width:42px;padding:3px 5px;font-size:12px;text-align:center"
+             oninput="Views.Payroll.previewDayCalc(${idx},${di})">h
+           <input type="number" id="dm-${idx}-${di}" value="${mns}" min="0" max="59"
+             style="width:42px;padding:3px 5px;font-size:12px;text-align:center"
+             oninput="Views.Payroll.previewDayCalc(${idx},${di})">m`;
+      const statSel = locked
+        ? `<span style="color:${col};font-weight:600;font-size:12px">${day.status}</span>`
+        : `<select id="ds-${idx}-${di}"
+             style="padding:3px 5px;font-size:12px;color:${col};font-weight:600;width:auto;border-color:var(--border)"
+             onchange="Views.Payroll.previewDayCalc(${idx},${di})">
+             ${['FD','HD','Absent','Week Off'].map(s=>`<option value="${s}" ${day.status===s?'selected':''}>${s}</option>`).join('')}
+           </select>`;
+
+      return `<tr id="drow-${idx}-${di}" style="border-bottom:1px solid var(--border)">
+        <td style="padding:5px 8px;color:var(--muted);font-size:12px;white-space:nowrap">${day.day} <span style="color:var(--muted)">${day.dayName.slice(0,3)}</span></td>
+        <td style="padding:5px 6px">${statSel}</td>
+        <td style="padding:5px 6px">${hrsInput}</td>
+        <td id="dot-${idx}-${di}" style="padding:5px 8px;text-align:right;font-size:12px;color:var(--success)">${c.otMin > 0 ? '+'+c.otMin+'m' : '—'}</td>
+        <td id="dsf-${idx}-${di}" style="padding:5px 8px;text-align:right;font-size:12px;color:var(--danger)">${c.shortfallMin > 0 ? '-'+c.shortfallMin+'m' : '—'}</td>
+        <td id="dam-${idx}-${di}" style="padding:5px 8px;text-align:right;font-size:12px">
+          ${c.otEarn > 0 ? '<span style="color:var(--success)">+'+fmt(c.otEarn)+'</span>' : ''}
+          ${c.sfDeduct > 0 ? '<span style="color:var(--danger)">-'+fmt(c.sfDeduct)+'</span>' : ''}
+          ${c.otEarn===0 && c.sfDeduct===0 ? '<span style="color:var(--muted)">—</span>' : ''}
         </td>
-        <td style="padding:6px 8px">${tag}</td>
+        <td style="padding:5px 8px">${c.tag ? `<span style="font-size:11px;padding:1px 5px;border-radius:4px;${c.tagStyle}">${c.tag}</span>` : ''}</td>
       </tr>`;
     }).join('');
 
-    const calcRows = `
-      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">TD (paid days)</td><td style="padding:5px 8px;text-align:right;font-weight:600">${p.TD}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.full_days} FD + ${p.half_days} HD + ${p.holiday_absent_days} Hol</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">Daily rate</td><td style="padding:5px 8px;text-align:right">${fmt(daily)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">₹${p.weekly_salary}/wk ÷ 6</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">Hourly rate</td><td style="padding:5px 8px;text-align:right">${fmt(hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">Daily ÷ 9</td></tr>
-      <tr style="background:var(--surface2)"><td style="padding:5px 8px;font-weight:600">Gross pay</td><td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(p.gross_pay)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.TD} × ${fmt(daily)}</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--success)">+ Weekday OT</td><td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt((p.ot_weekday_min/60)*hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.ot_weekday_min} min × ${fmt(hourly)}/hr</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--success)">+ Sunday OT</td><td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt((p.ot_sunday_min/60)*hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.ot_sunday_min} min × ${fmt(hourly)}/hr</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--success)">+ Holiday OT</td><td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt((p.ot_holiday_min/60)*hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.ot_holiday_min} min × ${fmt(hourly)}/hr</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--danger)">− Shortfall</td><td style="padding:5px 8px;text-align:right;color:var(--danger)">-${fmt(p.shortfall_deduction)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.shortfall_min} min × ${fmt(hourly)}/hr</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--warning)">− Bonus cut</td><td style="padding:5px 8px;text-align:right;color:var(--warning)">-${fmt(p.bonus_cut)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.bonus_eligible ? 'Eligible (worked '+p.full_days+'+'+p.half_days+' days)' : 'Not eligible'}</td></tr>
-      <tr><td style="padding:5px 8px;color:var(--warning)">− Advances</td><td style="padding:5px 8px;text-align:right;color:var(--warning)">-${fmt(p.total_advances)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">Recorded for ${p.month}</td></tr>
-      <tr style="background:var(--primary);color:#fff"><td style="padding:8px;font-weight:700;border-radius:4px 0 0 4px">NET PAY</td><td style="padding:8px;text-align:right;font-weight:700;font-size:16px">${fmt(p.net_pay)}</td><td style="border-radius:0 4px 4px 0"></td></tr>`;
+    const calcPanel = (q) => `
+      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">TD (paid days)</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:600">${q.TD}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.full_days} FD + ${q.half_days} HD + ${q.holiday_absent_days} Hol</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">Daily rate</td>
+          <td style="padding:5px 8px;text-align:right">${fmt(daily)}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">₹${q.weekly_salary}/wk ÷ 6</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">Hourly rate</td>
+          <td style="padding:5px 8px;text-align:right">${fmt(hourly)}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">Daily ÷ 9</td></tr>
+      <tr style="background:var(--surface2)"><td style="padding:5px 8px;font-weight:600">Gross pay</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(q.gross_pay)}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.TD} × ${fmt(daily)}</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--success)">+ Weekday OT</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt(Math.round(q.ot_weekday_min/60*hourly))}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.ot_weekday_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--success)">+ Sunday OT</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt(Math.round(q.ot_sunday_min/60*hourly))}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.ot_sunday_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--success)">+ Holiday OT</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt(Math.round(q.ot_holiday_min/60*hourly))}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.ot_holiday_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--danger)">− Shortfall</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--danger)">-${fmt(q.shortfall_deduction)}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.shortfall_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--warning)">− Bonus cut</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--warning)">-${fmt(q.bonus_cut)}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.bonus_eligible ? 'Eligible' : 'Not eligible'}</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--warning)">− Advances</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--warning)">-${fmt(q.total_advances)}</td>
+          <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${q.month}</td></tr>
+      <tr style="background:var(--primary);color:#fff">
+          <td style="padding:8px;font-weight:700;border-radius:4px 0 0 4px">NET PAY</td>
+          <td style="padding:8px;text-align:right;font-weight:700;font-size:16px">${fmt(q.net_pay)}</td>
+          <td style="border-radius:0 4px 4px 0"></td></tr>`;
 
     return `
-    <div style="padding:16px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start">
+    <div style="padding:16px;display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start">
       <div>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted)">
-          DAILY ATTENDANCE — ${emp?.name || p.emp_id} &nbsp;|&nbsp; ${p.month} &nbsp;|&nbsp;
-          Weekly ₹${p.weekly_salary} &nbsp;|&nbsp; Daily ${fmt(daily)} &nbsp;|&nbsp; Hourly ${fmt(hourly)}
+          DAILY ATTENDANCE — ${emp?.name || p.emp_id} &nbsp;|&nbsp; ${p.month}
+          &nbsp;|&nbsp; Weekly ₹${p.weekly_salary} &nbsp;|&nbsp; Daily ${fmt(daily)} &nbsp;|&nbsp; Hourly ${fmt(hourly)}
+          ${locked ? '&nbsp;<span style="background:var(--success-light);color:var(--success);padding:2px 8px;border-radius:4px;font-size:11px">FINALISED — read only</span>' : ''}
         </div>
         ${noData
-          ? '<p style="color:var(--muted);font-size:13px">No day-by-day data — upload a Petpooja Excel to see this breakdown.</p>'
-          : `<div style="overflow-x:auto;max-height:340px;overflow-y:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:12px">
-              <thead style="position:sticky;top:0;background:var(--surface2);z-index:1">
-                <tr>
-                  <th style="padding:6px 8px;text-align:left">#</th>
-                  <th style="padding:6px 8px;text-align:left">Day</th>
-                  <th style="padding:6px 8px;text-align:left">Status</th>
-                  <th style="padding:6px 8px;text-align:right">Hours</th>
-                  <th style="padding:6px 8px;text-align:right">OT</th>
-                  <th style="padding:6px 8px;text-align:right">Shortfall</th>
-                  <th style="padding:6px 8px;text-align:right">Amount</th>
-                  <th style="padding:6px 8px"></th>
-                </tr>
-              </thead>
-              <tbody>${dayRows}</tbody>
-            </table>
-          </div>`
+          ? `<p style="color:var(--muted);font-size:13px;padding:16px 0">
+               No day-by-day data available.<br>
+               This employee's salary was calculated without a Petpooja upload (e.g. loaded from draft).<br>
+               Re-upload the Petpooja Excel to edit daily attendance.
+             </p>`
+          : `<div style="overflow-x:auto;max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead style="position:sticky;top:0;background:var(--surface2);z-index:1">
+                  <tr>
+                    <th style="padding:7px 8px;text-align:left;font-weight:600">Day</th>
+                    <th style="padding:7px 8px;text-align:left;font-weight:600">Status</th>
+                    <th style="padding:7px 8px;text-align:left;font-weight:600">Hours</th>
+                    <th style="padding:7px 8px;text-align:right;font-weight:600">OT</th>
+                    <th style="padding:7px 8px;text-align:right;font-weight:600">Shortfall</th>
+                    <th style="padding:7px 8px;text-align:right;font-weight:600">₹</th>
+                    <th style="padding:7px 8px;font-weight:600"></th>
+                  </tr>
+                </thead>
+                <tbody>${dayRows}</tbody>
+              </table>
+            </div>
+            ${locked ? '' : `<div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+              <button class="btn btn-primary btn-sm" onclick="Views.Payroll.saveAttendanceEdits(${idx})">
+                Save &amp; Recalculate
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Cancel</button>
+              <span style="font-size:12px;color:var(--muted)">Edit status or hours above, then save.</span>
+            </div>`}`
         }
       </div>
-      <div style="min-width:320px">
+      <div>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted)">SALARY CALCULATION</div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <tbody>${calcRows}</tbody>
+        <table id="calc-panel-${idx}" style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <tbody>${calcPanel(p)}</tbody>
         </table>
-        <div style="margin-top:12px;display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.editRow(${idx})" ${p.status==='finalized'?'disabled':''}>Edit Values</button>
+        <div style="margin-top:12px">
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Close</button>
         </div>
       </div>
     </div>`;
+  },
+
+  // Live-preview a single row's OT/shortfall/amount as user edits it
+  previewDayCalc(idx, di) {
+    const emp    = State.employees.find(e => e.emp_id === State.payroll[idx]?.emp_id);
+    const daily  = (emp?.weekly_salary || 0) / 6;
+    const hourly = daily / 9;
+    const holidayDates = new Set((State.holidays||[]).map(h => h.date));
+
+    const days = State.attendanceMap[State.payroll[idx]?.emp_id];
+    if (!days) return;
+    const day = days[di];
+
+    const status = document.getElementById(`ds-${idx}-${di}`)?.value || day.status;
+    const h = parseInt(document.getElementById(`dh-${idx}-${di}`)?.value || 0);
+    const m = parseInt(document.getElementById(`dm-${idx}-${di}`)?.value || 0);
+    const fakeDay = { ...day, status, totalHours: h + m/60 };
+
+    const c = this._dayCalc(fakeDay, hourly, State.settings, holidayDates);
+    const otEl  = document.getElementById(`dot-${idx}-${di}`);
+    const sfEl  = document.getElementById(`dsf-${idx}-${di}`);
+    const amEl  = document.getElementById(`dam-${idx}-${di}`);
+    if (otEl) otEl.textContent = c.otMin > 0 ? '+'+c.otMin+'m' : '—';
+    if (sfEl) sfEl.textContent = c.shortfallMin > 0 ? '-'+c.shortfallMin+'m' : '—';
+    if (amEl) amEl.innerHTML  = c.otEarn > 0 ? `<span style="color:var(--success)">+${fmt(c.otEarn)}</span>`
+                               : c.sfDeduct > 0 ? `<span style="color:var(--danger)">-${fmt(c.sfDeduct)}</span>` : '<span style="color:var(--muted)">—</span>';
+  },
+
+  saveAttendanceEdits(idx) {
+    const p    = State.payroll[idx];
+    const emp  = State.employees.find(e => e.emp_id === p.emp_id);
+    const days = State.attendanceMap[p.emp_id];
+    if (!days) { toast('No attendance data to save', 'error'); return; }
+
+    // Read edited values back into attendanceMap
+    days.forEach((day, di) => {
+      const statusEl = document.getElementById(`ds-${idx}-${di}`);
+      const hEl = document.getElementById(`dh-${idx}-${di}`);
+      const mEl = document.getElementById(`dm-${idx}-${di}`);
+      if (statusEl) day.status = statusEl.value;
+      if (hEl && mEl) day.totalHours = parseInt(hEl.value||0) + parseInt(mEl.value||0)/60;
+    });
+
+    // Recalculate
+    const advances = State.advances.filter(a => a.emp_id === p.emp_id);
+    const fakeAtt  = { days, month: p.month };
+    const newRec   = Calc.run(fakeAtt, emp, advances, State.holidays, State.settings);
+    newRec.payroll_id    = p.payroll_id;
+    newRec.status        = p.status;
+    newRec.finalized_date = p.finalized_date;
+    newRec.notes         = p.notes;
+    State.payroll[idx]   = newRec;
+
+    this.renderTable(State.payroll);
+    // Re-open detail panel after re-render
+    setTimeout(() => {
+      document.getElementById('prow-detail-' + idx)?.classList.remove('hidden');
+    }, 50);
+    toast('Attendance saved & recalculated', 'success');
   },
 
   editRow(idx) {
