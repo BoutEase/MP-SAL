@@ -159,7 +159,8 @@ const State = {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   })(),
   parsedAttendance: null,
-  unmatchedAttendance: []
+  unmatchedAttendance: [],
+  attendanceMap: {}   // emp_id → parsed day array
 };
 
 // ---- API ----
@@ -569,7 +570,9 @@ Views.Payroll = {
           const dbEmp = Calc.matchEmployee(emp, State.employees);
           if (dbEmp) {
             const advances = State.advances.filter(a => a.emp_id === dbEmp.emp_id);
-            matched.push(Calc.run(emp, dbEmp, advances, State.holidays, State.settings));
+            const rec = Calc.run(emp, dbEmp, advances, State.holidays, State.settings);
+            matched.push(rec);
+            State.attendanceMap[dbEmp.emp_id] = emp.days;
           } else {
             unmatched.push(emp);
           }
@@ -617,6 +620,7 @@ Views.Payroll = {
     const advances = State.advances.filter(a => a.emp_id === empId);
     const rec   = Calc.run(att, dbEmp, advances, State.holidays, State.settings);
     State.payroll.push(rec);
+    State.attendanceMap[empId] = att.days;
     State.unmatchedAttendance.splice(i, 1);
     this.renderUnmatched(State.unmatchedAttendance);
     this.renderTable(State.payroll);
@@ -645,8 +649,14 @@ Views.Payroll = {
         <td style="padding:10px 8px;text-align:right;color:var(--warning)">${p.bonus_cut > 0 ? '-'+fmt(p.bonus_cut) : '—'}</td>
         <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(p.net_pay)}</td>
         <td style="padding:10px 8px;text-align:center"><span class="badge badge-${p.status==='finalized'?'success':'warning'}">${p.status}</span></td>
-        <td style="padding:10px 8px;text-align:center">
+        <td style="padding:10px 8px;text-align:center;display:flex;gap:4px;justify-content:center">
+          <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Detail</button>
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.editRow(${idx})" ${p.status==='finalized'?'disabled':''}>Edit</button>
+        </td>
+      </tr>
+      <tr id="prow-detail-${idx}" class="hidden">
+        <td colspan="12" style="padding:0;background:var(--surface2);border-bottom:2px solid var(--primary)">
+          ${this.renderDetailPanel(p, idx)}
         </td>
       </tr>
       <tr id="prow-edit-${idx}" class="hidden" style="background:var(--surface2)">
@@ -702,11 +712,143 @@ Views.Payroll = {
     </div>`;
   },
 
+  toggleDetail(idx) {
+    const row = document.getElementById('prow-detail-' + idx);
+    const isOpen = !row.classList.contains('hidden');
+    document.querySelectorAll('[id^="prow-detail-"]').forEach(r => r.classList.add('hidden'));
+    document.querySelectorAll('[id^="prow-edit-"]').forEach(r => r.classList.add('hidden'));
+    if (!isOpen) row.classList.remove('hidden');
+  },
+
+  renderDetailPanel(p, idx) {
+    const emp  = State.employees.find(e => e.emp_id === p.emp_id);
+    const days = State.attendanceMap[p.emp_id];
+    const daily  = (emp?.weekly_salary || p.weekly_salary) / 6;
+    const hourly = daily / 9;
+    const shortfallThresh = parseFloat(State.settings.SHORTFALL_THRESHOLD_HOURS || 8.5);
+    const otMinHours      = parseFloat(State.settings.OT_MIN_HOURS || 10);
+    const otRound         = parseInt(State.settings.OT_ROUND_MINUTES || 15);
+    const addLunch        = State.settings.ADD_LUNCH_TO_OT === 'true';
+    const lunchHrs        = parseFloat(State.settings.LUNCH_DURATION_HOURS || 1);
+    const holidayDates    = new Set((State.holidays||[]).map(h => h.date));
+
+    const noData = !days || !days.length;
+
+    const statusColor = { FD: 'var(--success)', HD: 'var(--warning)', Absent: 'var(--danger)', 'Week Off': 'var(--muted)' };
+
+    const dayRows = noData ? '' : days.map(day => {
+      const isSunday  = day.dayName === 'Sunday';
+      const isHoliday = holidayDates.has(day.date);
+      let otMin = 0, shortfallMin = 0, tag = '';
+
+      if (isSunday) {
+        if (day.totalHours > 0) {
+          otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
+          tag = '<span style="font-size:11px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Sun OT</span>';
+        } else {
+          tag = '<span style="font-size:11px;color:var(--muted)">Off</span>';
+        }
+      } else if (isHoliday) {
+        if (day.status === 'Absent') {
+          tag = '<span style="font-size:11px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:4px">Paid Holiday</span>';
+        } else {
+          otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
+          tag = '<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px">Hol OT</span>';
+        }
+      } else if (day.status === 'FD') {
+        if (day.totalHours >= otMinHours) {
+          otMin = Math.floor((day.totalHours - 9) * 60 / otRound) * otRound;
+          tag = '<span style="font-size:11px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:4px">OT</span>';
+        } else if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
+          shortfallMin = Math.round((9 - day.totalHours) * 60);
+          tag = '<span style="font-size:11px;background:#fee2e2;color:#dc2626;padding:1px 5px;border-radius:4px">Short</span>';
+        }
+      } else if (day.status === 'HD') {
+        shortfallMin = Math.round((9 - day.totalHours) * 60);
+        tag = '<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px">½ Day</span>';
+      }
+
+      const otEarn  = (otMin / 60) * hourly;
+      const sfDeduct = (shortfallMin / 60) * hourly;
+      const hrsDisplay = day.totalHours > 0 ? (Math.floor(day.totalHours) + 'h ' + Math.round((day.totalHours%1)*60) + 'm') : '—';
+      const color = statusColor[day.status] || 'var(--text)';
+
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:6px 8px;color:var(--muted);font-size:12px">${day.day}</td>
+        <td style="padding:6px 8px;font-size:12px">${day.dayName.slice(0,3)}</td>
+        <td style="padding:6px 8px;font-weight:600;color:${color};font-size:12px">${day.status}${isHoliday && day.status!=='Absent'?' 🗓':''}</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px">${hrsDisplay}</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;color:var(--success)">${otMin > 0 ? '+'+otMin+'m' : '—'}</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;color:var(--danger)">${shortfallMin > 0 ? '-'+shortfallMin+'m' : '—'}</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px">
+          ${otEarn > 0 ? '<span style="color:var(--success)">+'+fmt(otEarn)+'</span>' : ''}
+          ${sfDeduct > 0 ? '<span style="color:var(--danger)">-'+fmt(sfDeduct)+'</span>' : ''}
+          ${otEarn === 0 && sfDeduct === 0 ? '<span style="color:var(--muted)">—</span>' : ''}
+        </td>
+        <td style="padding:6px 8px">${tag}</td>
+      </tr>`;
+    }).join('');
+
+    const calcRows = `
+      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">TD (paid days)</td><td style="padding:5px 8px;text-align:right;font-weight:600">${p.TD}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.full_days} FD + ${p.half_days} HD + ${p.holiday_absent_days} Hol</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">Daily rate</td><td style="padding:5px 8px;text-align:right">${fmt(daily)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">₹${p.weekly_salary}/wk ÷ 6</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--muted);font-size:13px">Hourly rate</td><td style="padding:5px 8px;text-align:right">${fmt(hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">Daily ÷ 9</td></tr>
+      <tr style="background:var(--surface2)"><td style="padding:5px 8px;font-weight:600">Gross pay</td><td style="padding:5px 8px;text-align:right;font-weight:600">${fmt(p.gross_pay)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.TD} × ${fmt(daily)}</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--success)">+ Weekday OT</td><td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt((p.ot_weekday_min/60)*hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.ot_weekday_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--success)">+ Sunday OT</td><td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt((p.ot_sunday_min/60)*hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.ot_sunday_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--success)">+ Holiday OT</td><td style="padding:5px 8px;text-align:right;color:var(--success)">+${fmt((p.ot_holiday_min/60)*hourly)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.ot_holiday_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--danger)">− Shortfall</td><td style="padding:5px 8px;text-align:right;color:var(--danger)">-${fmt(p.shortfall_deduction)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.shortfall_min} min × ${fmt(hourly)}/hr</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--warning)">− Bonus cut</td><td style="padding:5px 8px;text-align:right;color:var(--warning)">-${fmt(p.bonus_cut)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">${p.bonus_eligible ? 'Eligible (worked '+p.full_days+'+'+p.half_days+' days)' : 'Not eligible'}</td></tr>
+      <tr><td style="padding:5px 8px;color:var(--warning)">− Advances</td><td style="padding:5px 8px;text-align:right;color:var(--warning)">-${fmt(p.total_advances)}</td><td style="padding:5px 8px;font-size:12px;color:var(--muted)">Recorded for ${p.month}</td></tr>
+      <tr style="background:var(--primary);color:#fff"><td style="padding:8px;font-weight:700;border-radius:4px 0 0 4px">NET PAY</td><td style="padding:8px;text-align:right;font-weight:700;font-size:16px">${fmt(p.net_pay)}</td><td style="border-radius:0 4px 4px 0"></td></tr>`;
+
+    return `
+    <div style="padding:16px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start">
+      <div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted)">
+          DAILY ATTENDANCE — ${emp?.name || p.emp_id} &nbsp;|&nbsp; ${p.month} &nbsp;|&nbsp;
+          Weekly ₹${p.weekly_salary} &nbsp;|&nbsp; Daily ${fmt(daily)} &nbsp;|&nbsp; Hourly ${fmt(hourly)}
+        </div>
+        ${noData
+          ? '<p style="color:var(--muted);font-size:13px">No day-by-day data — upload a Petpooja Excel to see this breakdown.</p>'
+          : `<div style="overflow-x:auto;max-height:340px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead style="position:sticky;top:0;background:var(--surface2);z-index:1">
+                <tr>
+                  <th style="padding:6px 8px;text-align:left">#</th>
+                  <th style="padding:6px 8px;text-align:left">Day</th>
+                  <th style="padding:6px 8px;text-align:left">Status</th>
+                  <th style="padding:6px 8px;text-align:right">Hours</th>
+                  <th style="padding:6px 8px;text-align:right">OT</th>
+                  <th style="padding:6px 8px;text-align:right">Shortfall</th>
+                  <th style="padding:6px 8px;text-align:right">Amount</th>
+                  <th style="padding:6px 8px"></th>
+                </tr>
+              </thead>
+              <tbody>${dayRows}</tbody>
+            </table>
+          </div>`
+        }
+      </div>
+      <div style="min-width:320px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted)">SALARY CALCULATION</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tbody>${calcRows}</tbody>
+        </table>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.editRow(${idx})" ${p.status==='finalized'?'disabled':''}>Edit Values</button>
+          <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Close</button>
+        </div>
+      </div>
+    </div>`;
+  },
+
   editRow(idx) {
     const editRow = document.getElementById('prow-edit-' + idx);
     const isOpen  = !editRow.classList.contains('hidden');
     // Close all
     document.querySelectorAll('[id^="prow-edit-"]').forEach(r => r.classList.add('hidden'));
+    document.querySelectorAll('[id^="prow-detail-"]').forEach(r => r.classList.add('hidden'));
     if (!isOpen) editRow.classList.remove('hidden');
   },
 
