@@ -389,20 +389,20 @@ const Calc = {
       if (isSunday) {
         weekOffDays++;
         if (day.totalHours > 0) {
-          const otHrs = day.totalHours + (addLunch ? lunchHrs : 0);
-          otSundayMin += Math.round(otHrs * 60);
+          const rawMin = (day.totalHours + (addLunch ? lunchHrs : 0)) * 60;
+          otSundayMin += Math.floor(rawMin / otRound) * otRound;
         }
       } else if (isHoliday) {
         if (day.status === 'FD') {
           fullDays++;
           // Present on holiday: counts as FD + all hours as holiday OT
-          const otHrs = day.totalHours + (addLunch ? lunchHrs : 0);
-          otHolidayMin += Math.round(otHrs * 60);
+          const rawMin = (day.totalHours + (addLunch ? lunchHrs : 0)) * 60;
+          otHolidayMin += Math.floor(rawMin / otRound) * otRound;
         } else if (day.status === 'HD') {
           halfDays++;
           shortfallMin += Math.round((9 - day.totalHours) * 60);
-          const otHrs = day.totalHours + (addLunch ? lunchHrs : 0);
-          otHolidayMin += Math.round(otHrs * 60);
+          const rawMin = (day.totalHours + (addLunch ? lunchHrs : 0)) * 60;
+          otHolidayMin += Math.floor(rawMin / otRound) * otRound;
         } else {
           // Absent on holiday = paid
           holidayAbsent++;
@@ -732,14 +732,16 @@ Views.Payroll = {
 
     if (isSunday) {
       if (day.totalHours > 0) {
-        otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
+        const rawMin = (day.totalHours + (addLunch ? lunchHrs : 0)) * 60;
+        otMin = Math.floor(rawMin / otRound) * otRound;
         tag = 'Sun OT'; tagStyle = 'background:#dbeafe;color:#1d4ed8';
       } else { tag = 'Off'; tagStyle = 'color:var(--muted)'; }
     } else if (isHoliday) {
       if (day.status === 'Absent') {
         tag = 'Paid Holiday'; tagStyle = 'background:#dcfce7;color:#15803d';
       } else {
-        otMin = Math.round((day.totalHours + (addLunch ? lunchHrs : 0)) * 60);
+        const rawMin = (day.totalHours + (addLunch ? lunchHrs : 0)) * 60;
+        otMin = Math.floor(rawMin / otRound) * otRound;
         tag = 'Hol OT'; tagStyle = 'background:#fef3c7;color:#92400e';
       }
     } else if (day.status === 'FD') {
