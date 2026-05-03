@@ -546,6 +546,13 @@ Views.Payroll = {
       <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.saveDraft()">Save Draft</button>
       <button class="btn btn-primary btn-sm" onclick="Views.Payroll.finalize()">Finalise Month</button>
     </div>
+    <div id="payroll-finalized-banner" style="display:none;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:18px">&#9888;</span>
+      <span style="font-weight:600;font-size:14px">This month is already finalised.</span>
+      <span style="color:#92400e;font-size:13px">Any changes will overwrite the finalised data.</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.dismissFinalizedBanner()">Edit anyway</button>
+    </div>
     <div class="card" style="margin-bottom:14px;padding:14px 16px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px">Advance Deduction Period</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
@@ -582,7 +589,11 @@ Views.Payroll = {
     } catch(e) {}
   },
 
-  onMonthChange(m) { State.currentMonth = m; },
+  onMonthChange(m) {
+    State.currentMonth = m;
+    const banner = document.getElementById('payroll-finalized-banner');
+    if (banner) banner.style.display = 'none';
+  },
 
   async onUpload(e) {
     const file = e.target.files[0];
@@ -1083,8 +1094,16 @@ Views.Payroll = {
       State.advances = advRes.data || [];
 
       this.renderTable(State.payroll);
+      const isFinalized = State.payroll.some(p => p.status === 'finalized');
+      const banner = document.getElementById('payroll-finalized-banner');
+      if (banner) banner.style.display = isFinalized ? 'flex' : 'none';
       toast(`Loaded ${State.payroll.length} records`, 'success');
     } catch(e) { toast(e.message, 'error'); }
+  },
+
+  dismissFinalizedBanner() {
+    const banner = document.getElementById('payroll-finalized-banner');
+    if (banner) banner.style.display = 'none';
   },
 
   async finalize() {
