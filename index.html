@@ -1801,22 +1801,39 @@ const ManagerApp = {
   },
 
   renderInputTable(date) {
-    const emps = State.employees.filter(e => e.status === 'Active')
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const allEmps = State.employees.filter(e => e.status === 'Active');
     const body = document.getElementById('m-emp-body');
     if (!body) return;
-    body.innerHTML = emps.map(emp => {
-      const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
-      const val = existing ? existing.amount : '';
-      return `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:10px 12px;color:var(--muted);font-size:13px">${emp.petpooja_id||'—'}</td>
-        <td style="padding:10px 12px;font-weight:500">${emp.name}</td>
-        <td style="padding:8px 12px;text-align:right">
-          <input type="number" id="m-amt-${emp.emp_id}" value="${val}" placeholder="—"
-            min="0" style="width:110px;text-align:right;padding:6px 8px" />
-        </td>
-      </tr>`;
-    }).join('');
+    const teams = getTeams();
+    const teamSet = new Set(teams);
+    // Group employees: known teams first (in order), then Others
+    const grouped = {};
+    teams.forEach(t => { grouped[t] = []; });
+    grouped['Other'] = [];
+    allEmps.forEach(emp => {
+      const t = emp.team && teamSet.has(emp.team) ? emp.team : 'Other';
+      grouped[t].push(emp);
+    });
+    const teamOrder = [...teams, 'Other'];
+    let rows = '';
+    teamOrder.forEach(team => {
+      const emps = (grouped[team] || []).sort((a, b) => a.name.localeCompare(b.name));
+      if (!emps.length) return;
+      rows += `<tr><td colspan="3" style="padding:8px 12px;background:var(--bg-secondary,#f3f4f6);font-weight:700;font-size:13px;color:var(--muted);letter-spacing:.5px;border-bottom:1px solid var(--border)">${team}</td></tr>`;
+      emps.forEach(emp => {
+        const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
+        const val = existing ? existing.amount : '';
+        rows += `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--muted);font-size:13px">${emp.petpooja_id||'—'}</td>
+          <td style="padding:10px 12px;font-weight:500">${emp.name}</td>
+          <td style="padding:8px 12px;text-align:right">
+            <input type="number" id="m-amt-${emp.emp_id}" value="${val}" placeholder="—"
+              min="0" style="width:110px;text-align:right;padding:6px 8px" />
+          </td>
+        </tr>`;
+      });
+    });
+    body.innerHTML = rows;
   },
 
   renderSubmitted(date) {
