@@ -1707,6 +1707,7 @@ const ManagerApp = {
       </div>
       <h3 style="font-size:15px;font-weight:600;margin-bottom:10px">Today's Advances</h3>
       <div id="m-recent"></div>
+      <div id="m-pdf-wrap" style="margin-top:12px"></div>
     </main>`;
     this.loadRecent();
   },
@@ -1734,8 +1735,14 @@ const ManagerApp = {
     try {
       const r = await API.call('getAdvances', { start_date: today, end_date: today });
       const todayList = (r.data || []).filter(a => a.created_by === 'Manager');
+      this.todayList = todayList;
       const c = document.getElementById('m-recent');
-      if (!todayList.length) { c.innerHTML = '<p style="color:var(--muted);font-size:14px">None yet today.</p>'; return; }
+      const p = document.getElementById('m-pdf-wrap');
+      if (!todayList.length) {
+        c.innerHTML = '<p style="color:var(--muted);font-size:14px">None yet today.</p>';
+        if (p) p.innerHTML = '';
+        return;
+      }
       c.innerHTML = todayList.map(a => `
         <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
           <div style="flex:1"><strong>${a.emp_name}</strong>
@@ -1744,7 +1751,59 @@ const ManagerApp = {
           </div>
           <div style="font-size:18px;font-weight:700">${fmt(a.amount)}</div>
         </div>`).join('');
+      if (p) p.innerHTML = `<button class="btn btn-secondary" style="width:100%" onclick="ManagerApp.downloadPDF()">
+        Download PDF for WhatsApp
+      </button>`;
     } catch(e) {}
+  },
+
+  downloadPDF() {
+    const list = this.todayList || [];
+    if (!list.length) return;
+    const today = list[0]?.date || new Date().toISOString().split('T')[0];
+    const company = State.settings?.COMPANY_NAME || 'Mahitha Prasad';
+    const total = list.reduce((s, a) => s + a.amount, 0);
+    const rows = list.map(a => `
+      <tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0">${a.emp_name}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">₹${a.amount.toLocaleString('en-IN')}</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Advance Report ${today}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 32px; color: #1e293b; max-width: 600px; margin: 0 auto; }
+        h1 { font-size: 20px; margin: 0 0 4px; }
+        .sub { color: #64748b; font-size: 13px; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { background: #1e3a5f; color: white; }
+        th { padding: 10px 12px; text-align: left; font-size: 13px; }
+        th:last-child { text-align: right; }
+        td { font-size: 14px; }
+        .total-row td { padding: 12px; font-weight: 700; font-size: 15px; background: #f1f5f9; }
+        .footer { margin-top: 32px; font-size: 12px; color: #94a3b8; }
+      </style>
+    </head><body>
+      <h1>${company} — Advance Report</h1>
+      <div class="sub">Date: ${today} &nbsp;|&nbsp; Submitted by: Manager &nbsp;|&nbsp; Status: Pending approval</div>
+      <table>
+        <thead><tr><th>Employee</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row">
+            <td>Total (${list.length} advance${list.length > 1 ? 's' : ''})</td>
+            <td style="text-align:right">₹${total.toLocaleString('en-IN')}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="footer">Generated on ${new Date().toLocaleString('en-IN')} &nbsp;·&nbsp; MP-SAL Payroll</div>
+    </body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
   }
 };
 
