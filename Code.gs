@@ -457,7 +457,10 @@ function finalizePayroll(data) {
   var count = 0;
 
   for (var i = 1; i < payrollRows.length; i++) {
-    if (payrollRows[i][2] !== month) continue;
+    var rowMonth = payrollRows[i][2] instanceof Date
+      ? Utilities.formatDate(payrollRows[i][2], 'Asia/Kolkata', 'yyyy-MM')
+      : String(payrollRows[i][2]).substring(0, 7);
+    if (rowMonth !== month) continue;
     if (payrollRows[i][23] === 'finalized') continue;
 
     payrollSheet.getRange(i + 1, 24).setValue('finalized');
