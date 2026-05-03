@@ -93,7 +93,8 @@ function getDefaultSettings() {
     COMPANY_CONTRIBUTION: '500',
     BONUS_ELIGIBILITY_MIN_DAYS: '6',
     OT_MIN_HOURS: '10',
-    OT_ROUND_MINUTES: '15'
+    OT_ROUND_MINUTES: '15',
+    TEAMS: 'Emb,Stitching'
   };
 }
 

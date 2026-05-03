@@ -88,6 +88,9 @@
     /* ── Spinner ── */
     .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
   </style>
 </head>
 <body>
@@ -164,6 +167,10 @@ const State = {
   unmatchedAttendance: [],
   attendanceMap: {}   // emp_id → parsed day array
 };
+
+function getTeams() {
+  return (State.settings.TEAMS || 'Emb,Stitching').split(',').map(t => t.trim()).filter(Boolean);
+}
 
 // ---- API ----
 const API = {
@@ -1109,7 +1116,8 @@ Views.Employees = {
       <h2 style="font-size:18px;font-weight:700">Employees</h2>
       <input type="search" id="emp-search" placeholder="Search…" style="max-width:200px" oninput="Views.Employees.filter()" />
       <select id="emp-team" style="width:auto" onchange="Views.Employees.filter()">
-        <option value="">All Teams</option><option>Emb</option><option>Stitching</option>
+        <option value="">All Teams</option>
+        ${getTeams().map(t => `<option>${t}</option>`).join('')}
       </select>
       <span style="flex:1"></span>
       <button class="btn btn-primary btn-sm" onclick="Views.Employees.openForm()">+ Add Employee</button>
@@ -1174,8 +1182,7 @@ Views.Employees = {
         <div class="field"><label>Name *</label><input id="ef-name" value="${emp.name||''}" /></div>
         <div class="field"><label>Team</label>
           <select id="ef-team"><option value="">—</option>
-            <option ${emp.team==='Emb'?'selected':''}>Emb</option>
-            <option ${emp.team==='Stitching'?'selected':''}>Stitching</option>
+            ${getTeams().map(t => `<option ${emp.team===t?'selected':''}>${t}</option>`).join('')}
           </select></div>
         <div class="field"><label>Designation</label><input id="ef-desig" value="${emp.designation||''}" /></div>
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${emp.petpooja_id||''}" /></div>
@@ -1601,6 +1608,12 @@ Views.Settings = {
         </div>
       </div>
       <div class="card">
+        <h3 style="font-size:15px;margin-bottom:14px">Teams</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Teams appear in employee records and advance reports.</p>
+        <div id="teams-list"></div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="Views.Settings.addTeamRow()">+ Add Team</button>
+      </div>
+      <div class="card">
         <h3 style="font-size:15px;margin-bottom:14px">Holidays ${new Date().getFullYear()}</h3>
         <div id="holiday-list"></div>
         <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="Views.Settings.addHolidayRow()">+ Add Holiday</button>
@@ -1616,6 +1629,29 @@ Views.Settings = {
       State.holidays = r.data || [];
       this.renderHolidays();
     } catch(e) {}
+    this.renderTeams();
+  },
+
+  renderTeams() {
+    const c = document.getElementById('teams-list');
+    if (!c) return;
+    const teams = getTeams();
+    c.innerHTML = teams.map((t, i) => `
+      <div style="display:flex;gap:8px;margin-bottom:8px" id="team-row-${i}">
+        <input type="text" id="team-name-${i}" value="${t}" placeholder="Team name" style="flex:1;max-width:240px" />
+        <button class="btn btn-danger btn-sm" onclick="document.getElementById('team-row-${i}').remove()">✕</button>
+      </div>`).join('');
+  },
+
+  addTeamRow() {
+    const c = document.getElementById('teams-list');
+    const i = Date.now();
+    const div = document.createElement('div');
+    div.id = 'team-row-' + i;
+    div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+    div.innerHTML = `<input type="text" id="team-name-${i}" placeholder="Team name" style="flex:1;max-width:240px" />
+      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>`;
+    c.appendChild(div);
   },
 
   renderHolidays() {
@@ -1656,6 +1692,15 @@ Views.Settings = {
       COMPANY_CONTRIBUTION:        document.getElementById('s-comcon')?.value,
       BONUS_ELIGIBILITY_MIN_DAYS:  document.getElementById('s-bondays')?.value,
     };
+
+    // Collect teams
+    const teamNames = [];
+    document.querySelectorAll('[id^="team-row-"]').forEach(row => {
+      const i = row.id.replace('team-row-', '');
+      const name = document.getElementById('team-name-' + i)?.value?.trim();
+      if (name) teamNames.push(name);
+    });
+    if (teamNames.length) settings.TEAMS = teamNames.join(',');
 
     // Collect holidays
     const holidays = [];
@@ -1751,14 +1796,42 @@ const ManagerApp = {
   },
 
   renderSubmitted(date) {
-    const list = this.dateAdvances.sort((a, b) => a.emp_name.localeCompare(b.emp_name));
     const c = document.getElementById('m-submitted');
     if (!c) return;
-    if (!list.length) { c.innerHTML = ''; return; }
-    const total = list.reduce((s, a) => s + a.amount, 0);
-    const statusStyle = s => s === 'Approved'
-      ? 'background:#dcfce7;color:#15803d'
-      : 'background:#fef3c7;color:#92400e';
+    if (!this.dateAdvances.length) { c.innerHTML = ''; return; }
+
+    // Enrich with employee data and group by team
+    const enriched = this.dateAdvances.map(a => {
+      const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+      return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
+    });
+    const teams = [...new Set(enriched.map(a => a.team))].sort();
+    const statusStyle = s => s === 'Approved' ? 'background:#dcfce7;color:#15803d' : 'background:#fef3c7;color:#92400e';
+    const grandTotal = enriched.reduce((s, a) => s + a.amount, 0);
+
+    let rows = '';
+    teams.forEach(team => {
+      const group = enriched.filter(a => a.team === team).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
+      const sub = group.reduce((s, a) => s + a.amount, 0);
+      rows += `<tr style="background:var(--surface2)">
+        <td colspan="4" style="padding:8px 10px;font-weight:700;font-size:12px;color:var(--muted)">${team}</td>
+      </tr>`;
+      rows += group.map(a => `
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:9px 10px;color:var(--muted);font-size:12px">${a.petpooja_id}</td>
+          <td style="padding:9px 10px;font-weight:500">${a.emp_name}</td>
+          <td style="padding:9px 10px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+          <td style="padding:9px 10px;text-align:center">
+            <span style="font-size:11px;padding:2px 7px;border-radius:99px;${statusStyle(a.status)}">${a.status}</span>
+          </td>
+        </tr>`).join('');
+      rows += `<tr style="background:var(--surface2)">
+        <td colspan="2" style="padding:8px 10px;font-weight:600;font-size:13px">${team} Total</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(sub)}</td>
+        <td></td>
+      </tr>`;
+    });
+
     c.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h3 style="font-size:15px;font-weight:600">Submitted for ${date}</h3>
@@ -1768,23 +1841,17 @@ const ManagerApp = {
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead style="background:var(--surface2)">
             <tr>
-              <th style="padding:10px 8px;text-align:left">Employee</th>
-              <th style="padding:10px 8px;text-align:right">Amount</th>
-              <th style="padding:10px 8px;text-align:center">Status</th>
+              <th style="padding:10px;text-align:left;width:50px">ID</th>
+              <th style="padding:10px;text-align:left">Employee</th>
+              <th style="padding:10px;text-align:right">Amount</th>
+              <th style="padding:10px;text-align:center">Status</th>
             </tr>
           </thead>
           <tbody>
-            ${list.map(a => `
-              <tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:10px 8px;font-weight:500">${a.emp_name}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
-                <td style="padding:10px 8px;text-align:center">
-                  <span style="font-size:11px;padding:2px 8px;border-radius:99px;${statusStyle(a.status)}">${a.status}</span>
-                </td>
-              </tr>`).join('')}
-            <tr style="background:var(--surface2)">
-              <td style="padding:10px 8px;font-weight:700">Total (${list.length})</td>
-              <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(total)}</td>
+            ${rows}
+            <tr style="background:var(--primary);color:#fff">
+              <td colspan="2" style="padding:10px;font-weight:700">Grand Total (${enriched.length})</td>
+              <td style="padding:10px;text-align:right;font-weight:700">${fmt(grandTotal)}</td>
               <td></td>
             </tr>
           </tbody>
@@ -1827,21 +1894,34 @@ const ManagerApp = {
   },
 
   downloadPDF() {
-    const list = this.dateAdvances;
-    if (!list.length) return;
-    const date = document.getElementById('m-date')?.value || list[0]?.date;
+    if (!this.dateAdvances.length) return;
+    const date    = document.getElementById('m-date')?.value || this.dateAdvances[0]?.date;
     const company = State.settings?.COMPANY_NAME || 'Mahitha Prasad';
-    const total = list.reduce((s, a) => s + a.amount, 0);
-    const statusColor = s => s === 'Approved' ? '#15803d' : '#92400e';
-    const statusBg    = s => s === 'Approved' ? '#dcfce7'  : '#fef3c7';
-    const rows = list.sort((a,b) => a.emp_name.localeCompare(b.emp_name)).map(a => `
-      <tr>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0">${a.emp_name}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">₹${a.amount.toLocaleString('en-IN')}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center">
-          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${statusBg(a.status)};color:${statusColor(a.status)}">${a.status}</span>
-        </td>
-      </tr>`).join('');
+
+    // Enrich with employee data
+    const enriched = this.dateAdvances.map(a => {
+      const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+      return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
+    });
+    const teams = [...new Set(enriched.map(a => a.team))].sort();
+    const grandTotal = enriched.reduce((s, a) => s + a.amount, 0);
+
+    let bodyRows = '';
+    teams.forEach(team => {
+      const group = enriched.filter(a => a.team === team).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
+      const sub = group.reduce((s, a) => s + a.amount, 0);
+      bodyRows += `<tr><td colspan="4" style="padding:8px 12px;font-weight:700;font-size:12px;background:#e2e8f0;color:#475569">${team}</td></tr>`;
+      bodyRows += group.map(a => `
+        <tr>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px">${a.petpooja_id}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0">${a.emp_name}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">₹${a.amount.toLocaleString('en-IN')}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:11px;color:${a.status==='Approved'?'#15803d':'#92400e'}">${a.status}</td>
+        </tr>`).join('');
+      bodyRows += `<tr style="background:#fef9c3"><td colspan="2" style="padding:9px 12px;font-weight:700">${team} Total</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700">₹${sub.toLocaleString('en-IN')}</td><td></td></tr>`;
+    });
+
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
       <title>Advance Report ${date}</title>
       <style>
@@ -1851,21 +1931,20 @@ const ManagerApp = {
         table { width: 100%; border-collapse: collapse; }
         thead { background: #1e3a5f; color: white; }
         th { padding: 10px 12px; text-align: left; font-size: 13px; }
-        th:nth-child(2) { text-align: right; }
-        th:nth-child(3) { text-align: center; }
-        .total-row td { padding: 12px; font-weight: 700; font-size: 15px; background: #f1f5f9; }
+        th:nth-child(3) { text-align: right; }
+        th:nth-child(4) { text-align: center; }
         .footer { margin-top: 32px; font-size: 12px; color: #94a3b8; }
       </style>
     </head><body>
       <h1>${company} — Advance Report</h1>
       <div class="sub">Date: ${date} &nbsp;·&nbsp; Submitted by: Manager &nbsp;·&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</div>
       <table>
-        <thead><tr><th>Employee</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Employee</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
         <tbody>
-          ${rows}
-          <tr class="total-row">
-            <td>Total &mdash; ${list.length} advance${list.length > 1 ? 's' : ''}</td>
-            <td style="text-align:right">₹${total.toLocaleString('en-IN')}</td>
+          ${bodyRows}
+          <tr style="background:#f97316;color:#fff">
+            <td colspan="2" style="padding:10px 12px;font-weight:700">Grand Total &mdash; ${enriched.length} advance${enriched.length>1?'s':''}</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:700">₹${grandTotal.toLocaleString('en-IN')}</td>
             <td></td>
           </tr>
         </tbody>
