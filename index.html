@@ -478,11 +478,23 @@ const Calc = {
   },
 
   matchEmployee(parsed, dbEmployees) {
-    // Try petpooja_id first, then name
-    return dbEmployees.find(e => e.status === 'Active' && String(e.petpooja_id) === String(parsed.petpooja_id))
-        || dbEmployees.find(e => e.status === 'Active' && e.petpooja_name?.toLowerCase() === parsed.name.toLowerCase())
-        || dbEmployees.find(e => e.status === 'Active' && e.name.toLowerCase() === parsed.name.toLowerCase());
-  }
+    const active = dbEmployees.filter(e => e.status === 'Active');
+    const norm = s => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    // 1. Petpooja ID
+    const byId = active.find(e => String(e.petpooja_id) === String(parsed.petpooja_id) && parsed.petpooja_id);
+    if (byId) return byId;
+    // 2. Petpooja name (exact)
+    const byPName = active.find(e => norm(e.petpooja_name) === norm(parsed.name));
+    if (byPName) return byPName;
+    // 3. Employee name (exact)
+    const byName = active.find(e => norm(e.name) === norm(parsed.name));
+    if (byName) return byName;
+    // 4. Partial name — employee name contained in petpooja name or vice versa
+    return active.find(e =>
+      norm(parsed.name).includes(norm(e.name)) || norm(e.name).includes(norm(parsed.name)) ||
+      norm(parsed.name).includes(norm(e.petpooja_name)) || norm(e.petpooja_name).includes(norm(parsed.name))
+    ) || null;
+  },
 };
 
 // ============================================================
