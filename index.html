@@ -1458,22 +1458,22 @@ Views.Advances = {
   },
 
   async approveAll(date) {
-    const ids = this.all.filter(a => a.date === date && a.status === 'Pending').map(a => a.advance_id);
-    if (!ids.length) return;
+    const ids = this.all.filter(a => a.date === date && a.status.toLowerCase() === 'pending').map(a => a.advance_id);
+    if (!ids.length) { toast('No pending advances found for this date', 'error'); return; }
     if (!confirm(`Approve all ${ids.length} advance(s) for ${date}?`)) return;
     try {
-      await Promise.all(ids.map(id => API.call('approveAdvance', { advance_id: id })));
+      for (const id of ids) await API.call('approveAdvance', { advance_id: id });
       await this.fetch();
       toast(`${ids.length} advance(s) approved`, 'success');
     } catch(e) { toast(e.message, 'error'); }
   },
 
   async rejectAll(date) {
-    const ids = this.all.filter(a => a.date === date && a.status === 'Pending').map(a => a.advance_id);
-    if (!ids.length) return;
+    const ids = this.all.filter(a => a.date === date && a.status.toLowerCase() === 'pending').map(a => a.advance_id);
+    if (!ids.length) { toast('No pending advances found for this date', 'error'); return; }
     if (!confirm(`Reject all ${ids.length} advance(s) for ${date}?`)) return;
     try {
-      await Promise.all(ids.map(id => API.call('deleteAdvance', { advance_id: id })));
+      for (const id of ids) await API.call('deleteAdvance', { advance_id: id });
       await this.fetch();
       toast(`${ids.length} advance(s) rejected`, 'success');
     } catch(e) { toast(e.message, 'error'); }
