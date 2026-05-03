@@ -1181,9 +1181,13 @@ Views.Employees = {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
         <div class="field"><label>Name *</label><input id="ef-name" value="${emp.name||''}" /></div>
         <div class="field"><label>Team</label>
-          <select id="ef-team"><option value="">—</option>
-            ${getTeams().map(t => `<option ${emp.team===t?'selected':''}>${t}</option>`).join('')}
-          </select></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="ef-team"><option value="">—</option>
+              ${getTeams().map(t => `<option ${emp.team===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap"
+              onclick="Views.Employees.addNewTeam()">+ New Team</button>
+          </div></div>
         <div class="field"><label>Designation</label><input id="ef-desig" value="${emp.designation||''}" /></div>
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${emp.petpooja_id||''}" /></div>
         <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${emp.petpooja_name||''}" /></div>
@@ -1198,6 +1202,26 @@ Views.Employees = {
   },
 
   closeForm() { document.getElementById('emp-form-wrap').innerHTML = ''; },
+
+  async addNewTeam() {
+    const name = prompt('New team name:')?.trim();
+    if (!name) return;
+    const teams = getTeams();
+    if (teams.includes(name)) { toast('Team already exists', 'error'); return; }
+    teams.push(name);
+    const newVal = teams.join(',');
+    try {
+      await API.call('saveSettings', { TEAMS: newVal });
+      State.settings.TEAMS = newVal;
+      // Refresh the dropdown in the open form
+      const sel = document.getElementById('ef-team');
+      if (sel) {
+        sel.innerHTML = `<option value="">—</option>${teams.map(t => `<option>${t}</option>`).join('')}`;
+        sel.value = name;
+      }
+      toast(`Team "${name}" added`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
 
   async save(empId) {
     const name   = document.getElementById('ef-name')?.value.trim();
