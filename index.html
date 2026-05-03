@@ -9,6 +9,7 @@
   <title>MP-SAL Payroll</title>
   <link rel="manifest" href="manifest.json">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     :root {
       --bg: #f8fafc; --surface: #ffffff; --surface2: #f1f5f9;
@@ -88,6 +89,9 @@
     /* ── Spinner ── */
     .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
   </style>
 </head>
 <body>
@@ -116,12 +120,13 @@
     </div>
     <div class="card">
       <div class="role-tabs">
-        <div class="role-tab active" id="tab-admin" onclick="Auth.selectRole('admin')">Admin</div>
-        <div class="role-tab" id="tab-manager" onclick="Auth.selectRole('manager')">Manager</div>
+        <div class="role-tab active" id="tab-admin"    onclick="Auth.selectRole('admin')">Admin</div>
+        <div class="role-tab"        id="tab-manager"  onclick="Auth.selectRole('manager')">Manager</div>
+        <div class="role-tab"        id="tab-employee" onclick="Auth.selectRole('employee')">Employee</div>
       </div>
       <div class="field">
-        <label>PIN</label>
-        <input type="password" class="pin-input" id="pin-input" maxlength="8" placeholder="••••"
+        <label id="pin-label">PIN</label>
+        <input type="password" class="pin-input" id="pin-input" maxlength="20" placeholder="••••"
           onkeydown="if(event.key==='Enter') Auth.login()" />
       </div>
       <button class="btn btn-primary" style="width:100%" onclick="Auth.login()">Login</button>
@@ -139,6 +144,9 @@
 
 <!-- MANAGER SCREEN (shell only) -->
 <div id="screen-manager" class="screen hidden"></div>
+
+<!-- EMPLOYEE SCREEN (shell only) -->
+<div id="screen-employee" class="screen hidden"></div>
 
 <!-- TOAST -->
 <div id="toast"></div>
@@ -164,6 +172,10 @@ const State = {
   unmatchedAttendance: [],
   attendanceMap: {}   // emp_id → parsed day array
 };
+
+function getTeams() {
+  return (State.settings.TEAMS || 'Emb,Stitching').split(',').map(t => t.trim()).filter(Boolean);
+}
 
 // ---- API ----
 const API = {
@@ -233,28 +245,38 @@ const Auth = {
   selectedRole: 'admin',
   selectRole(role) {
     this.selectedRole = role;
-    document.getElementById('tab-admin').classList.toggle('active', role === 'admin');
-    document.getElementById('tab-manager').classList.toggle('active', role === 'manager');
+    ['admin','manager','employee'].forEach(r => {
+      const btn = document.getElementById('tab-' + r);
+      if (btn) btn.classList.toggle('active', r === role);
+    });
+    const lbl = document.getElementById('pin-label');
+    if (lbl) lbl.textContent = role === 'employee' ? 'Login Code' : 'PIN';
     document.getElementById('pin-input').value = '';
     document.getElementById('pin-input').focus();
   },
   async login() {
     const pin = document.getElementById('pin-input').value.trim();
-    if (!pin) { toast('Enter PIN', 'error'); return; }
+    if (!pin) { toast('Enter ' + (this.selectedRole === 'employee' ? 'Login Code' : 'PIN'), 'error'); return; }
     State.role = this.selectedRole;
-    State.pin = pin;
+    State.pin  = pin;
     try {
       const r = await API.call('verifyPin', { pin, role: this.selectedRole });
-      if (!r.success) { toast('Wrong PIN', 'error'); State.pin = null; return; }
-      await loadCoreData();
-      if (State.role === 'admin') AdminApp.init();
-      else ManagerApp.init();
+      if (!r.success) { toast(this.selectedRole === 'employee' ? 'Invalid login code' : 'Wrong PIN', 'error'); State.pin = null; return; }
+      if (State.role === 'employee') {
+        State.empId   = r.emp_id;
+        State.empName = r.emp_name;
+        EmployeeApp.init();
+      } else {
+        await loadCoreData();
+        if (State.role === 'admin') AdminApp.init();
+        else ManagerApp.init();
+      }
     } catch(e) {
       toast(e.message, 'error');
     }
   },
   logout() {
-    State.role = null; State.pin = null;
+    State.role = null; State.pin = null; State.empId = null; State.empName = null;
     document.getElementById('pin-input').value = '';
     show('screen-login');
   }
@@ -271,7 +293,7 @@ async function loadCoreData() {
 
 // ---- Utility ----
 function show(id) {
-  ['screen-setup','screen-login','screen-admin','screen-manager'].forEach(s => {
+  ['screen-setup','screen-login','screen-admin','screen-manager','screen-employee'].forEach(s => {
     const el = document.getElementById(s);
     if (el) el.classList.toggle('hidden', s !== id);
   });
@@ -538,6 +560,13 @@ Views.Payroll = {
       <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.saveDraft()">Save Draft</button>
       <button class="btn btn-primary btn-sm" onclick="Views.Payroll.finalize()">Finalise Month</button>
     </div>
+    <div id="payroll-finalized-banner" style="display:none;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:18px">&#9888;</span>
+      <span style="font-weight:600;font-size:14px">This month is already finalised.</span>
+      <span style="color:#92400e;font-size:13px">Any changes will overwrite the finalised data.</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.dismissFinalizedBanner()">Edit anyway</button>
+    </div>
     <div class="card" style="margin-bottom:14px;padding:14px 16px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px">Advance Deduction Period</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
@@ -574,7 +603,11 @@ Views.Payroll = {
     } catch(e) {}
   },
 
-  onMonthChange(m) { State.currentMonth = m; },
+  onMonthChange(m) {
+    State.currentMonth = m;
+    const banner = document.getElementById('payroll-finalized-banner');
+    if (banner) banner.style.display = 'none';
+  },
 
   async onUpload(e) {
     const file = e.target.files[0];
@@ -1075,8 +1108,16 @@ Views.Payroll = {
       State.advances = advRes.data || [];
 
       this.renderTable(State.payroll);
+      const isFinalized = State.payroll.some(p => p.status === 'finalized');
+      const banner = document.getElementById('payroll-finalized-banner');
+      if (banner) banner.style.display = isFinalized ? 'flex' : 'none';
       toast(`Loaded ${State.payroll.length} records`, 'success');
     } catch(e) { toast(e.message, 'error'); }
+  },
+
+  dismissFinalizedBanner() {
+    const banner = document.getElementById('payroll-finalized-banner');
+    if (banner) banner.style.display = 'none';
   },
 
   async finalize() {
@@ -1109,7 +1150,8 @@ Views.Employees = {
       <h2 style="font-size:18px;font-weight:700">Employees</h2>
       <input type="search" id="emp-search" placeholder="Search…" style="max-width:200px" oninput="Views.Employees.filter()" />
       <select id="emp-team" style="width:auto" onchange="Views.Employees.filter()">
-        <option value="">All Teams</option><option>Emb</option><option>Stitching</option>
+        <option value="">All Teams</option>
+        ${getTeams().map(t => `<option>${t}</option>`).join('')}
       </select>
       <span style="flex:1"></span>
       <button class="btn btn-primary btn-sm" onclick="Views.Employees.openForm()">+ Add Employee</button>
@@ -1173,14 +1215,18 @@ Views.Employees = {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
         <div class="field"><label>Name *</label><input id="ef-name" value="${emp.name||''}" /></div>
         <div class="field"><label>Team</label>
-          <select id="ef-team"><option value="">—</option>
-            <option ${emp.team==='Emb'?'selected':''}>Emb</option>
-            <option ${emp.team==='Stitching'?'selected':''}>Stitching</option>
-          </select></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="ef-team"><option value="">—</option>
+              ${getTeams().map(t => `<option ${emp.team===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap"
+              onclick="Views.Employees.addNewTeam()">+ New Team</button>
+          </div></div>
         <div class="field"><label>Designation</label><input id="ef-desig" value="${emp.designation||''}" /></div>
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${emp.petpooja_id||''}" /></div>
         <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${emp.petpooja_name||''}" /></div>
         <div class="field"><label>Weekly Salary (₹) *</label><input id="ef-salary" type="number" value="${emp.weekly_salary||''}" /></div>
+        <div class="field"><label>Login Code</label><input id="ef-logincode" value="${emp.login_code||''}" placeholder="e.g. emp001" /></div>
         <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${emp.joining_date||''}" /></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:4px">
@@ -1191,6 +1237,26 @@ Views.Employees = {
   },
 
   closeForm() { document.getElementById('emp-form-wrap').innerHTML = ''; },
+
+  async addNewTeam() {
+    const name = prompt('New team name:')?.trim();
+    if (!name) return;
+    const teams = getTeams();
+    if (teams.includes(name)) { toast('Team already exists', 'error'); return; }
+    teams.push(name);
+    const newVal = teams.join(',');
+    try {
+      await API.call('saveSettings', { TEAMS: newVal });
+      State.settings.TEAMS = newVal;
+      // Refresh the dropdown in the open form
+      const sel = document.getElementById('ef-team');
+      if (sel) {
+        sel.innerHTML = `<option value="">—</option>${teams.map(t => `<option>${t}</option>`).join('')}`;
+        sel.value = name;
+      }
+      toast(`Team "${name}" added`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
 
   async save(empId) {
     const name   = document.getElementById('ef-name')?.value.trim();
@@ -1203,6 +1269,7 @@ Views.Employees = {
       petpooja_id:  document.getElementById('ef-pid')?.value.trim(),
       petpooja_name:document.getElementById('ef-pname')?.value.trim() || name,
       weekly_salary: salary,
+      login_code:   document.getElementById('ef-logincode')?.value.trim(),
       joining_date: document.getElementById('ef-join')?.value,
       status: 'Active'
     };
@@ -1251,8 +1318,13 @@ Views.Advances = {
           style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:14px;color:var(--muted)">
           Approved <span id="tab-count-approved" style="background:var(--success);color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;margin-left:4px"></span>
         </button>
+        <button id="tab-btn-history" onclick="Views.Advances.showTab('history')"
+          style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:14px;color:var(--muted)">
+          History
+        </button>
       </div>
-      <div id="adv-list"></div>`;
+      <div id="adv-list"></div>
+      <div id="adv-history" style="display:none"></div>`;
     await this.fetch();
   },
 
@@ -1266,7 +1338,12 @@ Views.Advances = {
 
   showTab(tab) {
     this.activeTab = tab;
-    ['pending','approved'].forEach(t => {
+    const listEl    = document.getElementById('adv-list');
+    const historyEl = document.getElementById('adv-history');
+    if (listEl)    listEl.style.display    = tab === 'history' ? 'none' : '';
+    if (historyEl) historyEl.style.display = tab === 'history' ? '' : 'none';
+    if (tab === 'history') { this.renderHistoryForm(); return; }
+    ['pending','approved','history'].forEach(t => {
       const btn = document.getElementById('tab-btn-' + t);
       if (!btn) return;
       if (t === tab) {
@@ -1280,6 +1357,100 @@ Views.Advances = {
       }
     });
     this.renderList();
+  },
+
+  renderHistoryForm() {
+    ['pending','approved','history'].forEach(t => {
+      const btn = document.getElementById('tab-btn-' + t);
+      if (!btn) return;
+      if (t === 'history') {
+        btn.style.borderBottom = '2px solid var(--primary)';
+        btn.style.marginBottom = '-2px';
+        btn.style.color = 'var(--primary)';
+      } else {
+        btn.style.borderBottom = 'none';
+        btn.style.marginBottom = '0';
+        btn.style.color = 'var(--muted)';
+      }
+    });
+    const today = new Date().toISOString().split('T')[0];
+    const firstOfMonth = today.substring(0, 8) + '01';
+    const c = document.getElementById('adv-history');
+    if (!c) return;
+    c.innerHTML = `
+      <div class="card" style="margin-bottom:16px;padding:14px 16px">
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+          <div class="field" style="margin:0">
+            <label>From</label>
+            <input type="date" id="hist-from" value="${firstOfMonth}" />
+          </div>
+          <div class="field" style="margin:0">
+            <label>To</label>
+            <input type="date" id="hist-to" value="${today}" />
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="Views.Advances.loadHistory()">Load</button>
+        </div>
+      </div>
+      <div id="hist-results"></div>`;
+  },
+
+  async loadHistory() {
+    const from = document.getElementById('hist-from')?.value;
+    const to   = document.getElementById('hist-to')?.value;
+    if (!from || !to) { toast('Select a date range', 'error'); return; }
+    const res = document.getElementById('hist-results');
+    if (res) res.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await API.call('getAdvances', { start_date: from, end_date: to });
+      const list = (r.data || []).sort((a, b) => a.date > b.date ? 1 : -1);
+      if (!list.length) { res.innerHTML = '<p style="color:var(--muted)">No advances in this range.</p>'; return; }
+
+      // Enrich with team
+      const enriched = list.map(a => {
+        const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+        return Object.assign({}, a, { team: emp.team || 'Other' });
+      });
+
+      // Group by date
+      const dates = [...new Set(enriched.map(a => a.date))].sort();
+      const grandTotal = enriched.reduce((s, a) => s + a.amount, 0);
+      const statusStyle = s => s === 'Approved' ? 'color:#15803d;font-weight:600' : 'color:#92400e;font-weight:600';
+
+      let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+        + '<thead style="background:var(--surface2)"><tr>'
+        + '<th style="padding:10px 8px;text-align:left">Date</th>'
+        + '<th style="padding:10px 8px;text-align:left">Employee</th>'
+        + '<th style="padding:10px 8px;text-align:left">Team</th>'
+        + '<th style="padding:10px 8px;text-align:right">Amount</th>'
+        + '<th style="padding:10px 8px;text-align:center">Status</th>'
+        + '<th style="padding:10px 8px">Submitted by</th>'
+        + '</tr></thead><tbody>';
+
+      dates.forEach(date => {
+        const group = enriched.filter(a => a.date === date);
+        const dateTotal = group.reduce((s, a) => s + a.amount, 0);
+        html += `<tr><td colspan="6" style="padding:7px 8px;background:var(--surface2);font-weight:700;font-size:12px;color:var(--muted)">${date} &nbsp;·&nbsp; ${group.length} advance${group.length>1?'s':''} &nbsp;·&nbsp; ${fmt(dateTotal)}</td></tr>`;
+        group.forEach(a => {
+          html += `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:9px 8px;color:var(--muted);font-size:12px">${a.date}</td>
+            <td style="padding:9px 8px;font-weight:500">${a.emp_name}</td>
+            <td style="padding:9px 8px;color:var(--muted)">${a.team}</td>
+            <td style="padding:9px 8px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+            <td style="padding:9px 8px;text-align:center;font-size:12px;${statusStyle(a.status)}">${a.status}</td>
+            <td style="padding:9px 8px;color:var(--muted)">${a.created_by||'—'}</td>
+          </tr>`;
+        });
+      });
+
+      html += `<tr style="background:var(--surface2)">
+        <td colspan="3" style="padding:10px 8px;font-weight:700">Grand Total</td>
+        <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(grandTotal)}</td>
+        <td colspan="2"></td>
+      </tr>`;
+      html += '</tbody></table></div>';
+      html += `<p style="font-size:13px;color:var(--muted);margin-top:8px">${enriched.length} advance(s) &nbsp;·&nbsp; ${from} to ${to}</p>`;
+      res.innerHTML = html;
+    } catch(e) { toast(e.message, 'error'); }
   },
 
   renderList() {
@@ -1297,38 +1468,78 @@ Views.Advances = {
       c.innerHTML = `<p style="color:var(--muted)">No ${this.activeTab} advances.</p>`;
       return;
     }
-    c.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead style="background:var(--surface2)">
-        <tr>
-          <th style="padding:10px 8px;text-align:left">Date</th>
-          <th style="padding:10px 8px;text-align:left">Employee</th>
-          <th style="padding:10px 8px;text-align:right">Amount</th>
-          <th style="padding:10px 8px">Submitted by</th>
-          <th style="padding:10px 8px"></th>
-        </tr>
-      </thead>
-      <tbody>${list.map(a => `
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:10px 8px">${a.date}</td>
-          <td style="padding:10px 8px;font-weight:500">${a.emp_name}</td>
-          <td style="padding:10px 8px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
-          <td style="padding:10px 8px;color:var(--muted)">${a.created_by||'—'}</td>
-          <td style="padding:10px 8px">
-            <div style="display:flex;gap:4px;justify-content:flex-end">
-              ${this.activeTab === 'pending' ? `
-                <button class="btn btn-primary btn-sm" onclick="Views.Advances.approve('${a.advance_id}')">Approve</button>
-                <button class="btn btn-secondary btn-sm" onclick="Views.Advances.openForm('${a.advance_id}')">Edit</button>
-                <button class="btn btn-danger btn-sm" onclick="Views.Advances.remove('${a.advance_id}','Reject')">Reject</button>
-              ` : `
-                <button class="btn btn-danger btn-sm" onclick="Views.Advances.remove('${a.advance_id}','Delete')">Delete</button>
-              `}
+
+    const grandTotal = list.reduce((s,a) => s + a.amount, 0);
+
+    if (this.activeTab === 'pending') {
+      // Group by date — each date = one submission batch
+      const dates = [...new Set(list.map(a => a.date))].sort((a,b) => b > a ? 1 : -1);
+      let html = '<div style="display:flex;flex-direction:column;gap:16px">';
+      dates.forEach(date => {
+        const group = list.filter(a => a.date === date).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
+        const dateTotal = group.reduce((s,a) => s + a.amount, 0);
+        const submitter = group[0]?.created_by || '—';
+        html += `<div class="card" style="padding:0;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface2);flex-wrap:wrap">
+            <div>
+              <span style="font-weight:700;font-size:14px">${date}</span>
+              <span style="color:var(--muted);font-size:12px;margin-left:8px">by ${submitter}</span>
             </div>
-          </td>
-        </tr>`).join('')}
-      </tbody></table></div>
-      <p style="font-size:13px;color:var(--muted);margin-top:8px">
-        Total: <strong>${fmt(list.reduce((s,a)=>s+a.amount,0))}</strong>
-      </p>`;
+            <span style="flex:1"></span>
+            <span style="font-weight:700;font-size:14px">${fmt(dateTotal)}</span>
+            <button class="btn btn-primary btn-sm" onclick="Views.Advances.approveAll('${date}')">Approve All</button>
+            <button class="btn btn-danger btn-sm"  onclick="Views.Advances.rejectAll('${date}')">Reject All</button>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tbody>${group.map(a => `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:9px 14px;font-weight:500">${a.emp_name}</td>
+                <td style="padding:9px 14px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+                <td style="padding:9px 14px;text-align:right">
+                  <div style="display:flex;gap:4px;justify-content:flex-end">
+                    <button class="btn btn-secondary btn-sm" onclick="Views.Advances.openForm('${a.advance_id}')">Edit</button>
+                    <button class="btn btn-danger btn-sm"    onclick="Views.Advances.remove('${a.advance_id}','Reject')">Reject</button>
+                  </div>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      });
+      html += '</div>';
+      html += `<p style="font-size:13px;color:var(--muted);margin-top:8px">Total pending: <strong>${fmt(grandTotal)}</strong></p>`;
+      c.innerHTML = html;
+    } else {
+      // Approved tab — flat table, grouped by date for readability
+      const dates = [...new Set(list.map(a => a.date))].sort((a,b) => b > a ? 1 : -1);
+      let rows = '';
+      dates.forEach(date => {
+        const group = list.filter(a => a.date === date).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
+        const dateTotal = group.reduce((s,a) => s + a.amount, 0);
+        rows += `<tr><td colspan="4" style="padding:8px 8px;background:var(--surface2);font-weight:700;font-size:12px;color:var(--muted)">${date} — ${fmt(dateTotal)}</td></tr>`;
+        rows += group.map(a => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:9px 8px;font-weight:500">${a.emp_name}</td>
+            <td style="padding:9px 8px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+            <td style="padding:9px 8px;color:var(--muted)">${a.created_by||'—'}</td>
+            <td style="padding:9px 8px;text-align:right">
+              <button class="btn btn-danger btn-sm" onclick="Views.Advances.remove('${a.advance_id}','Delete')">Delete</button>
+            </td>
+          </tr>`).join('');
+      });
+      c.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead style="background:var(--surface2)">
+          <tr>
+            <th style="padding:10px 8px;text-align:left">Employee</th>
+            <th style="padding:10px 8px;text-align:right">Amount</th>
+            <th style="padding:10px 8px">Submitted by</th>
+            <th style="padding:10px 8px"></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <p style="font-size:13px;color:var(--muted);margin-top:8px">Total approved: <strong>${fmt(grandTotal)}</strong></p>`;
+    }
   },
 
   openForm(advId) {
@@ -1363,6 +1574,28 @@ Views.Advances = {
       await API.call('approveAdvance', { advance_id: advId });
       await this.fetch();
       toast('Advance approved', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  async approveAll(date) {
+    const ids = this.all.filter(a => a.date === date && a.status.toLowerCase() === 'pending').map(a => a.advance_id);
+    if (!ids.length) { toast('No pending advances found for this date', 'error'); return; }
+    if (!confirm(`Approve all ${ids.length} advance(s) for ${date}?`)) return;
+    try {
+      for (const id of ids) await API.call('approveAdvance', { advance_id: id });
+      await this.fetch();
+      toast(`${ids.length} advance(s) approved`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  async rejectAll(date) {
+    const ids = this.all.filter(a => a.date === date && a.status.toLowerCase() === 'pending').map(a => a.advance_id);
+    if (!ids.length) { toast('No pending advances found for this date', 'error'); return; }
+    if (!confirm(`Reject all ${ids.length} advance(s) for ${date}?`)) return;
+    try {
+      for (const id of ids) await API.call('deleteAdvance', { advance_id: id });
+      await this.fetch();
+      toast(`${ids.length} advance(s) rejected`, 'success');
     } catch(e) { toast(e.message, 'error'); }
   },
 
@@ -1601,6 +1834,12 @@ Views.Settings = {
         </div>
       </div>
       <div class="card">
+        <h3 style="font-size:15px;margin-bottom:14px">Teams</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Teams appear in employee records and advance reports.</p>
+        <div id="teams-list"></div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="Views.Settings.addTeamRow()">+ Add Team</button>
+      </div>
+      <div class="card">
         <h3 style="font-size:15px;margin-bottom:14px">Holidays ${new Date().getFullYear()}</h3>
         <div id="holiday-list"></div>
         <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="Views.Settings.addHolidayRow()">+ Add Holiday</button>
@@ -1616,6 +1855,29 @@ Views.Settings = {
       State.holidays = r.data || [];
       this.renderHolidays();
     } catch(e) {}
+    this.renderTeams();
+  },
+
+  renderTeams() {
+    const c = document.getElementById('teams-list');
+    if (!c) return;
+    const teams = getTeams();
+    c.innerHTML = teams.map((t, i) => `
+      <div style="display:flex;gap:8px;margin-bottom:8px" id="team-row-${i}">
+        <input type="text" id="team-name-${i}" value="${t}" placeholder="Team name" style="flex:1;max-width:240px" />
+        <button class="btn btn-danger btn-sm" onclick="document.getElementById('team-row-${i}').remove()">✕</button>
+      </div>`).join('');
+  },
+
+  addTeamRow() {
+    const c = document.getElementById('teams-list');
+    const i = Date.now();
+    const div = document.createElement('div');
+    div.id = 'team-row-' + i;
+    div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+    div.innerHTML = `<input type="text" id="team-name-${i}" placeholder="Team name" style="flex:1;max-width:240px" />
+      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>`;
+    c.appendChild(div);
   },
 
   renderHolidays() {
@@ -1656,6 +1918,15 @@ Views.Settings = {
       COMPANY_CONTRIBUTION:        document.getElementById('s-comcon')?.value,
       BONUS_ELIGIBILITY_MIN_DAYS:  document.getElementById('s-bondays')?.value,
     };
+
+    // Collect teams
+    const teamNames = [];
+    document.querySelectorAll('[id^="team-row-"]').forEach(row => {
+      const i = row.id.replace('team-row-', '');
+      const name = document.getElementById('team-name-' + i)?.value?.trim();
+      if (name) teamNames.push(name);
+    });
+    if (teamNames.length) settings.TEAMS = teamNames.join(',');
 
     // Collect holidays
     const holidays = [];
@@ -1707,6 +1978,7 @@ const ManagerApp = {
           <table style="width:100%;border-collapse:collapse;font-size:14px" id="m-emp-table">
             <thead style="background:var(--surface2)">
               <tr>
+                <th style="padding:10px 12px;text-align:left;font-weight:600">ID</th>
                 <th style="padding:10px 12px;text-align:left;font-weight:600">Employee</th>
                 <th style="padding:10px 12px;text-align:right;font-weight:600">Amount (₹)</th>
               </tr>
@@ -1731,58 +2003,102 @@ const ManagerApp = {
   },
 
   renderInputTable(date) {
-    const emps = State.employees.filter(e => e.status === 'Active')
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const allEmps = State.employees.filter(e => e.status === 'Active');
     const body = document.getElementById('m-emp-body');
     if (!body) return;
-    body.innerHTML = emps.map(emp => {
-      const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
-      const val = existing ? existing.amount : '';
-      return `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:10px 12px;font-weight:500">${emp.name}</td>
-        <td style="padding:8px 12px;text-align:right">
-          <input type="number" id="m-amt-${emp.emp_id}" value="${val}" placeholder="—"
-            min="0" style="width:110px;text-align:right;padding:6px 8px" />
-        </td>
-      </tr>`;
-    }).join('');
+    const teams = getTeams();
+    const teamSet = new Set(teams);
+    // Group employees: known teams first (in order), then Others
+    const grouped = {};
+    teams.forEach(t => { grouped[t] = []; });
+    grouped['Other'] = [];
+    allEmps.forEach(emp => {
+      const t = emp.team && teamSet.has(emp.team) ? emp.team : 'Other';
+      grouped[t].push(emp);
+    });
+    const teamOrder = [...teams, 'Other'];
+    let rows = '';
+    teamOrder.forEach(team => {
+      const emps = (grouped[team] || []).sort((a, b) => a.name.localeCompare(b.name));
+      if (!emps.length) return;
+      rows += `<tr><td colspan="3" style="padding:8px 12px;background:var(--bg-secondary,#f3f4f6);font-weight:700;font-size:13px;color:var(--muted);letter-spacing:.5px;border-bottom:1px solid var(--border)">${team}</td></tr>`;
+      emps.forEach(emp => {
+        const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
+        const val = existing ? existing.amount : '';
+        rows += `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px 12px;color:var(--muted);font-size:13px">${emp.petpooja_id||'—'}</td>
+          <td style="padding:10px 12px;font-weight:500">${emp.name}</td>
+          <td style="padding:8px 12px;text-align:right">
+            <input type="number" id="m-amt-${emp.emp_id}" value="${val}" placeholder="—"
+              min="0" style="width:110px;text-align:right;padding:6px 8px" />
+          </td>
+        </tr>`;
+      });
+    });
+    body.innerHTML = rows;
   },
 
   renderSubmitted(date) {
-    const list = this.dateAdvances.sort((a, b) => a.emp_name.localeCompare(b.emp_name));
     const c = document.getElementById('m-submitted');
     if (!c) return;
-    if (!list.length) { c.innerHTML = ''; return; }
-    const total = list.reduce((s, a) => s + a.amount, 0);
-    const statusStyle = s => s === 'Approved'
-      ? 'background:#dcfce7;color:#15803d'
-      : 'background:#fef3c7;color:#92400e';
+    if (!this.dateAdvances.length) { c.innerHTML = ''; return; }
+
+    // Enrich with employee data and group by team
+    const enriched = this.dateAdvances.map(a => {
+      const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+      return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
+    });
+    const teams = [...new Set(enriched.map(a => a.team))].sort();
+    const statusStyle = s => s === 'Approved' ? 'background:#dcfce7;color:#15803d' : 'background:#fef3c7;color:#92400e';
+    const grandTotal = enriched.reduce((s, a) => s + a.amount, 0);
+
+    let rows = '';
+    teams.forEach(team => {
+      const group = enriched.filter(a => a.team === team).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
+      const sub = group.reduce((s, a) => s + a.amount, 0);
+      rows += `<tr style="background:var(--surface2)">
+        <td colspan="4" style="padding:8px 10px;font-weight:700;font-size:12px;color:var(--muted)">${team}</td>
+      </tr>`;
+      rows += group.map(a => `
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:9px 10px;color:var(--muted);font-size:12px">${a.petpooja_id}</td>
+          <td style="padding:9px 10px;font-weight:500">${a.emp_name}</td>
+          <td style="padding:9px 10px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+          <td style="padding:9px 10px;text-align:center">
+            <span style="font-size:11px;padding:2px 7px;border-radius:99px;${statusStyle(a.status)}">${a.status}</span>
+          </td>
+        </tr>`).join('');
+      rows += `<tr style="background:var(--surface2)">
+        <td colspan="2" style="padding:8px 10px;font-weight:600;font-size:13px">${team} Total</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(sub)}</td>
+        <td></td>
+      </tr>`;
+    });
+
     c.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h3 style="font-size:15px;font-weight:600">Submitted for ${date}</h3>
-        <button class="btn btn-secondary btn-sm" onclick="ManagerApp.downloadPDF()">Download PDF</button>
+        <button class="btn btn-secondary btn-sm" onclick="ManagerApp.savePDF()">Save PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="ManagerApp.sharePDF()" style="display:flex;align-items:center;gap:5px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16c-.8 0-1.5.3-2 .8l-7.3-4.2c.1-.2.1-.4.1-.6s0-.4-.1-.6L16 7.2c.5.5 1.2.8 2 .8 1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3c0 .2 0 .4.1.6L7.8 9.8C7.3 9.3 6.6 9 5.8 9c-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-.8l7.3 4.2c-.1.2-.1.4-.1.6 0 1.6 1.3 2.9 2.9 2.9s2.9-1.3 2.9-2.9-1.2-3-2.8-3z"/></svg>
+          Share
+        </button>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead style="background:var(--surface2)">
             <tr>
-              <th style="padding:10px 8px;text-align:left">Employee</th>
-              <th style="padding:10px 8px;text-align:right">Amount</th>
-              <th style="padding:10px 8px;text-align:center">Status</th>
+              <th style="padding:10px;text-align:left;width:50px">ID</th>
+              <th style="padding:10px;text-align:left">Employee</th>
+              <th style="padding:10px;text-align:right">Amount</th>
+              <th style="padding:10px;text-align:center">Status</th>
             </tr>
           </thead>
           <tbody>
-            ${list.map(a => `
-              <tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:10px 8px;font-weight:500">${a.emp_name}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
-                <td style="padding:10px 8px;text-align:center">
-                  <span style="font-size:11px;padding:2px 8px;border-radius:99px;${statusStyle(a.status)}">${a.status}</span>
-                </td>
-              </tr>`).join('')}
-            <tr style="background:var(--surface2)">
-              <td style="padding:10px 8px;font-weight:700">Total (${list.length})</td>
-              <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(total)}</td>
+            ${rows}
+            <tr style="background:var(--primary);color:#fff">
+              <td colspan="2" style="padding:10px;font-weight:700">Grand Total (${enriched.length})</td>
+              <td style="padding:10px;text-align:right;font-weight:700">${fmt(grandTotal)}</td>
               <td></td>
             </tr>
           </tbody>
@@ -1793,6 +2109,13 @@ const ManagerApp = {
   async submit() {
     const date = document.getElementById('m-date')?.value;
     if (!date) { toast('Select a date', 'error'); return; }
+
+    // Fresh fetch before processing so existing advances are always current
+    try {
+      const r = await API.call('getAdvances', { start_date: date, end_date: date });
+      this.dateAdvances = r.data || [];
+    } catch(e) { toast(e.message, 'error'); return; }
+
     const emps = State.employees.filter(e => e.status === 'Active');
     const ops = [];
     let count = 0;
@@ -1817,57 +2140,210 @@ const ManagerApp = {
     } catch(e) { toast(e.message, 'error'); }
   },
 
-  downloadPDF() {
-    const list = this.dateAdvances;
-    if (!list.length) return;
-    const date = document.getElementById('m-date')?.value || list[0]?.date;
+  _buildPDFElement() {
+    const date    = document.getElementById('m-date')?.value || this.dateAdvances[0]?.date;
     const company = State.settings?.COMPANY_NAME || 'Mahitha Prasad';
-    const total = list.reduce((s, a) => s + a.amount, 0);
-    const statusColor = s => s === 'Approved' ? '#15803d' : '#92400e';
-    const statusBg    = s => s === 'Approved' ? '#dcfce7'  : '#fef3c7';
-    const rows = list.sort((a,b) => a.emp_name.localeCompare(b.emp_name)).map(a => `
-      <tr>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0">${a.emp_name}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">₹${a.amount.toLocaleString('en-IN')}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center">
-          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${statusBg(a.status)};color:${statusColor(a.status)}">${a.status}</span>
-        </td>
-      </tr>`).join('');
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Advance Report ${date}</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 32px; color: #1e293b; max-width: 640px; margin: 0 auto; }
-        h1 { font-size: 20px; margin: 0 0 4px; }
-        .sub { color: #64748b; font-size: 13px; margin-bottom: 24px; }
-        table { width: 100%; border-collapse: collapse; }
-        thead { background: #1e3a5f; color: white; }
-        th { padding: 10px 12px; text-align: left; font-size: 13px; }
-        th:nth-child(2) { text-align: right; }
-        th:nth-child(3) { text-align: center; }
-        .total-row td { padding: 12px; font-weight: 700; font-size: 15px; background: #f1f5f9; }
-        .footer { margin-top: 32px; font-size: 12px; color: #94a3b8; }
-      </style>
-    </head><body>
-      <h1>${company} — Advance Report</h1>
-      <div class="sub">Date: ${date} &nbsp;·&nbsp; Submitted by: Manager &nbsp;·&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</div>
-      <table>
-        <thead><tr><th>Employee</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
-        <tbody>
-          ${rows}
-          <tr class="total-row">
-            <td>Total &mdash; ${list.length} advance${list.length > 1 ? 's' : ''}</td>
-            <td style="text-align:right">₹${total.toLocaleString('en-IN')}</td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="footer">MP-SAL Payroll System</div>
-    </body></html>`;
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 400);
+    const enriched = this.dateAdvances.map(a => {
+      const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+      return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
+    });
+    const teams = [...new Set(enriched.map(a => a.team))].sort();
+    const grandTotal = enriched.reduce((s, a) => s + a.amount, 0);
+    let bodyRows = '';
+    teams.forEach(team => {
+      const group = enriched.filter(a => a.team === team).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
+      const sub = group.reduce((s, a) => s + a.amount, 0);
+      bodyRows += `<tr><td colspan="4" style="padding:8px 12px;font-weight:700;font-size:12px;background:#e2e8f0;color:#475569">${team}</td></tr>`;
+      bodyRows += group.map(a => `
+        <tr>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px">${a.petpooja_id}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0">${a.emp_name}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">&#8377;${a.amount.toLocaleString('en-IN')}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:11px;color:${a.status==='Approved'?'#15803d':'#92400e'}">${a.status}</td>
+        </tr>`).join('');
+      bodyRows += `<tr style="background:#fef9c3"><td colspan="2" style="padding:9px 12px;font-weight:700">${team} Total</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700">&#8377;${sub.toLocaleString('en-IN')}</td><td></td></tr>`;
+    });
+    const el = document.createElement('div');
+    el.innerHTML = `
+      <div style="font-family:Arial,sans-serif;padding:32px;color:#1e293b;max-width:640px;margin:0 auto">
+        <h1 style="font-size:20px;margin:0 0 4px">${company} &#8212; Advance Report</h1>
+        <div style="color:#64748b;font-size:13px;margin-bottom:24px">Date: ${date} &nbsp;&middot;&nbsp; Submitted by: Manager &nbsp;&middot;&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead style="background:#1e3a5f;color:#fff">
+            <tr><th style="padding:10px 12px;text-align:left;font-size:13px">ID</th><th style="padding:10px 12px;text-align:left;font-size:13px">Employee</th><th style="padding:10px 12px;text-align:right;font-size:13px">Amount</th><th style="padding:10px 12px;text-align:center;font-size:13px">Status</th></tr>
+          </thead>
+          <tbody>
+            ${bodyRows}
+            <tr style="background:#f97316;color:#fff">
+              <td colspan="2" style="padding:10px 12px;font-weight:700">Grand Total &#8212; ${enriched.length} advance${enriched.length>1?'s':''}</td>
+              <td style="padding:10px 12px;text-align:right;font-weight:700">&#8377;${grandTotal.toLocaleString('en-IN')}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:32px;font-size:12px;color:#94a3b8">MP-SAL Payroll System</div>
+      </div>`;
+    return { el, date };
+  },
+
+  savePDF() {
+    if (!this.dateAdvances.length) return;
+    const { el, date } = this._buildPDFElement();
+    html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
+  },
+
+  async sharePDF() {
+    if (!this.dateAdvances.length) return;
+    if (!navigator.share) { toast('Sharing not supported on this browser — use Save PDF instead', 'error'); return; }
+    const { el, date } = this._buildPDFElement();
+    try {
+      toast('Generating PDF…', 'success');
+      const blob = await html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).outputPdf('blob');
+      const file = new File([blob], `advances-${date}.pdf`, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Advances ${date}` });
+      } else {
+        toast('File sharing not supported — saving instead', 'error');
+        html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
+      }
+    } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
+  }
+};
+
+// ============================================================
+// EMPLOYEE APP
+// ============================================================
+const EmployeeApp = {
+  currentMonth: new Date().toISOString().substring(0, 7),
+
+  init() {
+    show('screen-employee');
+    const c = document.getElementById('screen-employee');
+    c.innerHTML = `
+      <div style="max-width:680px;margin:0 auto;padding:20px 16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+          <div style="font-weight:700;font-size:18px">MP-SAL</div>
+          <span style="flex:1"></span>
+          <span style="font-size:14px;color:var(--muted)">${State.empName}</span>
+          <button class="btn btn-secondary btn-sm" onclick="Auth.logout()">Logout</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <label style="font-weight:600;font-size:14px">Pay Slip for</label>
+          <input type="month" id="emp-month" value="${this.currentMonth}"
+            style="padding:6px 10px" onchange="EmployeeApp.load(this.value)" />
+        </div>
+        <div id="emp-slip"></div>
+      </div>`;
+    this.load(this.currentMonth);
+  },
+
+  async load(month) {
+    this.currentMonth = month;
+    const slip = document.getElementById('emp-slip');
+    if (!slip) return;
+    slip.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await API.call('getEmployeePayslip', { emp_id: State.empId, month });
+      const { payroll: p, advances } = r.data || {};
+      if (!p) {
+        slip.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);padding:32px">No payroll data found for ${month}.</div>`;
+        return;
+      }
+      const advTotal    = advances.reduce((s, a) => s + a.amount, 0);
+      const grossTotal  = (p.gross_pay || 0) + (p.ot_earnings || 0);
+      const deductions  = (p.shortfall_deduction || 0) + advTotal;
+      const net         = grossTotal - deductions;
+
+      const periodLabel = p.adv_start_date && p.adv_end_date
+        ? `${p.adv_start_date} to ${p.adv_end_date}`
+        : '—';
+
+      slip.innerHTML = `
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+            <div>
+              <div style="font-size:20px;font-weight:700">${State.empName}</div>
+              <div style="color:var(--muted);font-size:13px">Pay Slip &nbsp;·&nbsp; ${month}</div>
+            </div>
+            <div style="text-align:right;font-size:13px;color:var(--muted)">
+              <div>Advance Period</div>
+              <div style="font-weight:600;color:var(--text)">${periodLabel}</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Attendance</div>
+              ${this._row('Full Days', p.full_days)}
+              ${this._row('Half Days', p.half_days)}
+              ${this._row('Absent', p.absent_days)}
+              ${this._row('Week Off', p.week_off_days)}
+            </div>
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">OT</div>
+              ${this._row('Weekday OT', fmtHrs(p.ot_weekday_min))}
+              ${this._row('Sunday OT',  fmtHrs(p.ot_sunday_min))}
+              ${this._row('Holiday OT', fmtHrs(p.ot_holiday_min))}
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:16px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div>
+                <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Earnings</div>
+                ${this._row('Gross Pay',   fmt(p.gross_pay || 0))}
+                ${this._row('OT Earnings', fmt(p.ot_earnings || 0))}
+                <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--border);font-weight:700;margin-top:4px">
+                  <span>Total Earnings</span><span>${fmt(grossTotal)}</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Deductions</div>
+                ${this._row('Shortfall', fmt(p.shortfall_deduction || 0))}
+                ${this._row('Advances',  fmt(advTotal))}
+                <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--border);font-weight:700;margin-top:4px">
+                  <span>Total Deductions</span><span>${fmt(deductions)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:var(--primary);color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:700;font-size:15px">Net In-Hand</span>
+            <span style="font-weight:800;font-size:20px">${fmt(net)}</span>
+          </div>
+        </div>
+
+        ${advances.length ? `
+        <div class="card">
+          <div style="font-size:14px;font-weight:700;margin-bottom:12px">Advance Details &nbsp;<span style="font-size:12px;font-weight:400;color:var(--muted)">(${periodLabel})</span></div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead style="background:var(--surface2)">
+              <tr>
+                <th style="padding:8px 10px;text-align:left">Date</th>
+                <th style="padding:8px 10px;text-align:right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${advances.map(a => `<tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:9px 10px">${a.date}</td>
+                <td style="padding:9px 10px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+              </tr>`).join('')}
+              <tr style="background:var(--surface2)">
+                <td style="padding:9px 10px;font-weight:700">Total Advance Deducted</td>
+                <td style="padding:9px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>` : ''}`;
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  _row(label, val) {
+    return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="color:var(--muted)">${label}</span><span style="font-weight:500">${val ?? '—'}</span>
+    </div>`;
   }
 };
 

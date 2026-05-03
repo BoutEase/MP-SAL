@@ -51,9 +51,10 @@ function doPost(e) {
       getPayments:     () => getPayments(data && data.month),
       savePayment:     () => savePayment(data),
       deletePayment:   () => deletePayment(data.payment_id),
-      getBonusPool:    () => getBonusPool(),
-      getSettings:     () => getSettings(),
-      saveSettings:    () => saveSettings(data),
+      getBonusPool:         () => getBonusPool(),
+      getSettings:          () => getSettings(),
+      saveSettings:         () => saveSettings(data),
+      getEmployeePayslip:   () => getEmployeePayslip(data),
     };
 
     const handler = handlers[action];
@@ -71,11 +72,40 @@ function checkPin(pin, role) {
   const s = getSettingsMap();
   if (role === 'admin')   return String(pin) === String(s.ADMIN_PIN);
   if (role === 'manager') return String(pin) === String(s.MANAGER_PIN);
+  if (role === 'employee') {
+    var sheet = getSheet('Employees');
+    var rows = sheet.getDataRange().getValues().slice(1);
+    return rows.some(function(r) { return r[8] === 'Active' && String(r[7]) === String(pin); });
+  }
   return false;
 }
 
 function verifyPin(data) {
+  if (data.role === 'employee') {
+    var sheet = getSheet('Employees');
+    var rows = sheet.getDataRange().getValues().slice(1);
+    var emp = rows.find(function(r) { return r[8] === 'Active' && String(r[7]) === String(data.pin); });
+    if (!emp) return { success: false };
+    return { success: true, role: 'employee', emp_id: emp[0], emp_name: emp[1] };
+  }
   return { success: checkPin(data.pin, data.role), role: data.role };
+}
+
+function getEmployeePayslip(data) {
+  var empId = data.emp_id;
+  var month = data.month;
+  var payRows = getPayroll(month).data.filter(function(p) { return p.emp_id === empId; });
+  var pay = payRows[0] || null;
+  var advances = [];
+  if (pay && pay.adv_start_date && pay.adv_end_date) {
+    advances = getAdvances({
+      emp_id: empId,
+      status: 'Approved',
+      start_date: pay.adv_start_date,
+      end_date: pay.adv_end_date
+    }).data;
+  }
+  return { success: true, data: { payroll: pay, advances: advances } };
 }
 
 // ---- Settings ----
@@ -93,7 +123,8 @@ function getDefaultSettings() {
     COMPANY_CONTRIBUTION: '500',
     BONUS_ELIGIBILITY_MIN_DAYS: '6',
     OT_MIN_HOURS: '10',
-    OT_ROUND_MINUTES: '15'
+    OT_ROUND_MINUTES: '15',
+    TEAMS: 'Emb,Stitching'
   };
 }
 
@@ -265,13 +296,19 @@ function saveHolidays(holidays) {
 // ---- Advances ----
 // Schema: advance_id | emp_id | emp_name | date | amount | status | created_by | created_at
 
+function fmtDate(val) {
+  if (!val) return '';
+  if (val instanceof Date) return Utilities.formatDate(val, 'Asia/Kolkata', 'yyyy-MM-dd');
+  return String(val).substring(0, 10);
+}
+
 function getAdvances(filter) {
   const sheet = getSheet('Advances');
   var rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; })
     .map(function(r) {
       return {
         advance_id: r[0], emp_id: r[1], emp_name: r[2],
-        date: String(r[3]).substring(0, 10),
+        date: fmtDate(r[3]),
         amount: Number(r[4]),
         status: r[5] || 'Pending',
         created_by: r[6], created_at: r[7]
@@ -291,6 +328,8 @@ function getAdvances(filter) {
 function saveAdvance(data) {
   const sheet = getSheet('Advances');
   const rows = sheet.getDataRange().getValues();
+  // Force date to string so Google Sheets won't auto-convert to Date type
+  var dateStr = String(data.date).substring(0, 10);
 
   if (!data.advance_id) {
     const nums = rows.slice(1).filter(function(r) { return r[0]; })
@@ -299,14 +338,14 @@ function saveAdvance(data) {
     data.advance_id = 'ADV' + next;
     data.created_at = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
     sheet.appendRow([
-      data.advance_id, data.emp_id, data.emp_name, data.date,
+      data.advance_id, data.emp_id, data.emp_name, dateStr,
       data.amount, 'Pending', data.created_by || 'Manager', data.created_at
     ]);
   } else {
     // Edit: update date and amount, reset to Pending so admin re-approves
     const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.advance_id; });
     if (idx > 0) {
-      sheet.getRange(idx + 1, 4, 1, 3).setValues([[data.date, data.amount, 'Pending']]);
+      sheet.getRange(idx + 1, 4, 1, 3).setValues([[dateStr, data.amount, 'Pending']]);
     }
   }
   return { success: true, advance_id: data.advance_id };
