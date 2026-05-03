@@ -658,6 +658,7 @@ Views.Payroll = {
           if (dbEmp) {
             const advances = State.advances.filter(a => a.emp_id === dbEmp.emp_id);
             const rec = Calc.run(emp, dbEmp, advances, State.holidays, State.settings);
+            rec.month = State.currentMonth; // always use selected month, not Excel's From date
             matched.push(rec);
             State.attendanceMap[dbEmp.emp_id] = emp.days;
           } else {
