@@ -336,12 +336,17 @@ const Parser = {
       const deptM  = cell.match(/Department:\s*(.+?)\s+Designation:/);
       const idM    = cell.match(/Employee ID:\s*(\d+)/);
       const fromM  = cell.match(/From:\s*(\d{4}-\d{2}-\d{2})/);
+      const toM    = cell.match(/To:\s*(\d{4}-\d{2}-\d{2})/);
+
+      // Use "To" date month if available (more reliable for multi-month pay periods),
+      // otherwise fall back to "From" date month
+      const payMonth = toM ? toM[1].substring(0, 7) : (fromM ? fromM[1].substring(0, 7) : '');
 
       const emp = {
         name: nameM ? nameM[1].trim() : '',
         department: deptM ? deptM[1].trim() : '',
         petpooja_id: idM ? String(parseInt(idM[1])) : '',
-        month: fromM ? fromM[1].substring(0, 7) : '',
+        month: payMonth,
         days: []
       };
 
@@ -489,11 +494,13 @@ const Calc = {
     // 3. Employee name (exact)
     const byName = active.find(e => norm(e.name) === norm(parsed.name));
     if (byName) return byName;
-    // 4. Partial name — employee name contained in petpooja name or vice versa
-    return active.find(e =>
-      norm(parsed.name).includes(norm(e.name)) || norm(e.name).includes(norm(parsed.name)) ||
-      norm(parsed.name).includes(norm(e.petpooja_name)) || norm(e.petpooja_name).includes(norm(parsed.name))
-    ) || null;
+    // 4. Partial name — only if names are non-empty to avoid false matches
+    const pn = norm(parsed.name);
+    return active.find(e => {
+      const en = norm(e.name), epn = norm(e.petpooja_name);
+      return (en && (pn.includes(en) || en.includes(pn))) ||
+             (epn && (pn.includes(epn) || epn.includes(pn)));
+    }) || null;
   },
 };
 
@@ -630,7 +637,14 @@ Views.Payroll = {
         const parsed = Parser.parse(new Uint8Array(ev.target.result));
         if (!parsed.length) { toast('No employee data found in file', 'error'); return; }
 
-        // Keep the month the user has selected — don't override from Excel's From date
+        // Auto-set month from Excel (uses To date if available, else From date)
+        const detectedMonth = parsed[0].month;
+        if (detectedMonth) {
+          State.currentMonth = detectedMonth;
+          const picker = document.getElementById('payroll-month');
+          if (picker) picker.value = detectedMonth;
+        }
+
         State.advStartDate = document.getElementById('adv-start')?.value || '';
         State.advEndDate   = document.getElementById('adv-end')?.value   || '';
 
