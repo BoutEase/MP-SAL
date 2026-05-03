@@ -720,12 +720,25 @@ Views.Payroll = {
     const att   = State.unmatchedAttendance[i];
     const advances = State.advances.filter(a => a.emp_id === empId);
     const rec   = Calc.run(att, dbEmp, advances, State.holidays, State.settings);
+    rec.month   = State.currentMonth;
     State.payroll.push(rec);
     State.attendanceMap[empId] = att.days;
     State.unmatchedAttendance.splice(i, 1);
     this.renderUnmatched(State.unmatchedAttendance);
     this.renderTable(State.payroll);
-    toast('Mapped ' + dbEmp.name, 'success');
+
+    // Save petpooja_id to the employee record so future uploads auto-match
+    if (att.petpooja_id && !dbEmp.petpooja_id) {
+      try {
+        await API.call('saveEmployee', Object.assign({}, dbEmp, { petpooja_id: att.petpooja_id }));
+        dbEmp.petpooja_id = att.petpooja_id;
+        toast('Mapped ' + dbEmp.name + ' — Petpooja ID saved for future uploads', 'success');
+      } catch(e) {
+        toast('Mapped ' + dbEmp.name, 'success');
+      }
+    } else {
+      toast('Mapped ' + dbEmp.name, 'success');
+    }
   },
 
   renderTable(payroll) {
