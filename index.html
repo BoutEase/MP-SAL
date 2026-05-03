@@ -771,9 +771,11 @@ Views.Payroll = {
         <td style="padding:10px 8px;text-align:right;color:var(--warning)">${p.bonus_cut > 0 ? '-'+fmt(p.bonus_cut) : '—'}</td>
         <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(p.net_pay)}</td>
         <td style="padding:10px 8px;text-align:center"><span class="badge badge-${p.status==='finalized'?'success':'warning'}">${p.status}</span></td>
-        <td style="padding:10px 8px;text-align:center;display:flex;gap:4px;justify-content:center">
+        <td style="padding:10px 8px;text-align:center;display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Detail</button>
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.editRow(${idx})" ${p.status==='finalized'?'disabled':''}>Edit</button>
+          <button class="btn btn-primary btn-sm" onclick="Views.Payroll.downloadPayslip(${idx})">↓ Slip</button>
+          <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.sharePayslip(${idx})" title="Share via WhatsApp">📤</button>
         </td>
       </tr>
       <tr id="prow-detail-${idx}" class="hidden">
@@ -1184,6 +1186,80 @@ Views.Payroll = {
       State.advStartDate = d.toISOString().split('T')[0];
       await this.loadDraft();
     } catch(e) { toast(e.message, 'error'); }
+  },
+
+  _slipHTML(p, emp, advances) {
+    const advTotal    = advances.reduce((s, a) => s + Number(a.amount), 0);
+    const grossTotal  = (p.gross_pay || 0) + (p.ot_earnings || 0);
+    const deductions  = (p.shortfall_deduction || 0) + advTotal;
+    const net         = grossTotal - deductions;
+    const period      = p.adv_start_date && p.adv_end_date ? `${p.adv_start_date} → ${p.adv_end_date}` : '—';
+    const company     = (State.settings || {}).COMPANY_NAME || 'Mahitha Prasad';
+    const sr = (l, v) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#64748b">${l}</span><span style="font-weight:500">${v}</span></div>`;
+    return `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+        <div>
+          <div style="font-size:22px;font-weight:700">${emp.name}</div>
+          <div style="color:#64748b;font-size:13px">Pay Slip · ${p.month}${emp.team ? ' · ' + emp.team : ''}</div>
+        </div>
+        <div style="text-align:right;font-size:13px">
+          <div style="font-size:15px;font-weight:700">${company}</div>
+          <div style="color:#64748b">Advance Period</div>
+          <div style="font-weight:600">${period}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Attendance</div>
+          ${sr('Full Days', p.full_days)} ${sr('Half Days', p.half_days)}
+          ${sr('Absent Days', p.absent_days)} ${sr('Week Off', p.week_off_days)}</div>
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Overtime</div>
+          ${sr('Weekday OT', fmtHrs(p.ot_weekday_min))}
+          ${sr('Sunday OT',  fmtHrs(p.ot_sunday_min))}
+          ${sr('Holiday OT', fmtHrs(p.ot_holiday_min))}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e2e8f0;padding-top:16px;margin-bottom:16px">
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Earnings</div>
+          ${sr('Gross Pay', fmt(p.gross_pay || 0))} ${sr('OT Earnings', fmt(p.ot_earnings || 0))}
+          <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Earnings</span><span>${fmt(grossTotal)}</span></div></div>
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Deductions</div>
+          ${sr('Shortfall', fmt(p.shortfall_deduction || 0))} ${sr('Advances', fmt(advTotal))}
+          <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Deductions</span><span>${fmt(deductions)}</span></div></div>
+      </div>
+      <div style="background:#2563eb;color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span style="font-weight:700;font-size:15px">Net In-Hand</span>
+        <span style="font-weight:800;font-size:22px">${fmt(net)}</span>
+      </div>
+      ${advances.length ? `<div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Advance Details <span style="font-size:12px;font-weight:400;color:#64748b">(${period})</span></div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left">Date</th><th style="padding:8px 10px;text-align:right">Amount</th></tr></thead>
+          <tbody>${advances.map(a => `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px 10px">${a.date}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td></tr>`).join('')}
+          <tr style="background:#f1f5f9"><td style="padding:8px 10px;font-weight:700">Total Deducted</td><td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td></tr></tbody>
+        </table></div>` : ''}
+    </div>`;
+  },
+
+  async downloadPayslip(idx) {
+    const p   = State.payroll[idx];
+    const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
+    const advances = State.advances.filter(a => a.emp_id === p.emp_id);
+    const html = this._slipHTML(p, emp, advances);
+    const name = `Payslip_${emp.name.replace(/\s+/g,'_')}_${p.month}.pdf`;
+    await html2pdf().set({ margin:8, filename:name, image:{type:'jpeg',quality:.95}, html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'} }).from(html).save();
+  },
+
+  async sharePayslip(idx) {
+    if (!navigator.share) { toast('Share not supported on this browser', 'error'); return; }
+    const p   = State.payroll[idx];
+    const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
+    const advances = State.advances.filter(a => a.emp_id === p.emp_id);
+    const html = this._slipHTML(p, emp, advances);
+    const name = `Payslip_${emp.name.replace(/\s+/g,'_')}_${p.month}.pdf`;
+    try {
+      const blob = await html2pdf().set({ margin:8, filename:name, image:{type:'jpeg',quality:.95}, html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'} }).from(html).outputPdf('blob');
+      const file = new File([blob], name, { type:'application/pdf' });
+      await navigator.share({ files:[file], title:`Pay Slip – ${emp.name} (${p.month})` });
+    } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
   }
 };
 
