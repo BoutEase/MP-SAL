@@ -51,9 +51,10 @@ function doPost(e) {
       getPayments:     () => getPayments(data && data.month),
       savePayment:     () => savePayment(data),
       deletePayment:   () => deletePayment(data.payment_id),
-      getBonusPool:    () => getBonusPool(),
-      getSettings:     () => getSettings(),
-      saveSettings:    () => saveSettings(data),
+      getBonusPool:         () => getBonusPool(),
+      getSettings:          () => getSettings(),
+      saveSettings:         () => saveSettings(data),
+      getEmployeePayslip:   () => getEmployeePayslip(data),
     };
 
     const handler = handlers[action];
@@ -71,11 +72,40 @@ function checkPin(pin, role) {
   const s = getSettingsMap();
   if (role === 'admin')   return String(pin) === String(s.ADMIN_PIN);
   if (role === 'manager') return String(pin) === String(s.MANAGER_PIN);
+  if (role === 'employee') {
+    var sheet = getSheet('Employees');
+    var rows = sheet.getDataRange().getValues().slice(1);
+    return rows.some(function(r) { return r[8] === 'Active' && String(r[7]) === String(pin); });
+  }
   return false;
 }
 
 function verifyPin(data) {
+  if (data.role === 'employee') {
+    var sheet = getSheet('Employees');
+    var rows = sheet.getDataRange().getValues().slice(1);
+    var emp = rows.find(function(r) { return r[8] === 'Active' && String(r[7]) === String(data.pin); });
+    if (!emp) return { success: false };
+    return { success: true, role: 'employee', emp_id: emp[0], emp_name: emp[1] };
+  }
   return { success: checkPin(data.pin, data.role), role: data.role };
+}
+
+function getEmployeePayslip(data) {
+  var empId = data.emp_id;
+  var month = data.month;
+  var payRows = getPayroll(month).data.filter(function(p) { return p.emp_id === empId; });
+  var pay = payRows[0] || null;
+  var advances = [];
+  if (pay && pay.adv_start_date && pay.adv_end_date) {
+    advances = getAdvances({
+      emp_id: empId,
+      status: 'Approved',
+      start_date: pay.adv_start_date,
+      end_date: pay.adv_end_date
+    }).data;
+  }
+  return { success: true, data: { payroll: pay, advances: advances } };
 }
 
 // ---- Settings ----

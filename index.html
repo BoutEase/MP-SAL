@@ -120,12 +120,13 @@
     </div>
     <div class="card">
       <div class="role-tabs">
-        <div class="role-tab active" id="tab-admin" onclick="Auth.selectRole('admin')">Admin</div>
-        <div class="role-tab" id="tab-manager" onclick="Auth.selectRole('manager')">Manager</div>
+        <div class="role-tab active" id="tab-admin"    onclick="Auth.selectRole('admin')">Admin</div>
+        <div class="role-tab"        id="tab-manager"  onclick="Auth.selectRole('manager')">Manager</div>
+        <div class="role-tab"        id="tab-employee" onclick="Auth.selectRole('employee')">Employee</div>
       </div>
       <div class="field">
-        <label>PIN</label>
-        <input type="password" class="pin-input" id="pin-input" maxlength="8" placeholder="••••"
+        <label id="pin-label">PIN</label>
+        <input type="password" class="pin-input" id="pin-input" maxlength="20" placeholder="••••"
           onkeydown="if(event.key==='Enter') Auth.login()" />
       </div>
       <button class="btn btn-primary" style="width:100%" onclick="Auth.login()">Login</button>
@@ -143,6 +144,9 @@
 
 <!-- MANAGER SCREEN (shell only) -->
 <div id="screen-manager" class="screen hidden"></div>
+
+<!-- EMPLOYEE SCREEN (shell only) -->
+<div id="screen-employee" class="screen hidden"></div>
 
 <!-- TOAST -->
 <div id="toast"></div>
@@ -241,28 +245,38 @@ const Auth = {
   selectedRole: 'admin',
   selectRole(role) {
     this.selectedRole = role;
-    document.getElementById('tab-admin').classList.toggle('active', role === 'admin');
-    document.getElementById('tab-manager').classList.toggle('active', role === 'manager');
+    ['admin','manager','employee'].forEach(r => {
+      const btn = document.getElementById('tab-' + r);
+      if (btn) btn.classList.toggle('active', r === role);
+    });
+    const lbl = document.getElementById('pin-label');
+    if (lbl) lbl.textContent = role === 'employee' ? 'Login Code' : 'PIN';
     document.getElementById('pin-input').value = '';
     document.getElementById('pin-input').focus();
   },
   async login() {
     const pin = document.getElementById('pin-input').value.trim();
-    if (!pin) { toast('Enter PIN', 'error'); return; }
+    if (!pin) { toast('Enter ' + (this.selectedRole === 'employee' ? 'Login Code' : 'PIN'), 'error'); return; }
     State.role = this.selectedRole;
-    State.pin = pin;
+    State.pin  = pin;
     try {
       const r = await API.call('verifyPin', { pin, role: this.selectedRole });
-      if (!r.success) { toast('Wrong PIN', 'error'); State.pin = null; return; }
-      await loadCoreData();
-      if (State.role === 'admin') AdminApp.init();
-      else ManagerApp.init();
+      if (!r.success) { toast(this.selectedRole === 'employee' ? 'Invalid login code' : 'Wrong PIN', 'error'); State.pin = null; return; }
+      if (State.role === 'employee') {
+        State.empId   = r.emp_id;
+        State.empName = r.emp_name;
+        EmployeeApp.init();
+      } else {
+        await loadCoreData();
+        if (State.role === 'admin') AdminApp.init();
+        else ManagerApp.init();
+      }
     } catch(e) {
       toast(e.message, 'error');
     }
   },
   logout() {
-    State.role = null; State.pin = null;
+    State.role = null; State.pin = null; State.empId = null; State.empName = null;
     document.getElementById('pin-input').value = '';
     show('screen-login');
   }
@@ -279,7 +293,7 @@ async function loadCoreData() {
 
 // ---- Utility ----
 function show(id) {
-  ['screen-setup','screen-login','screen-admin','screen-manager'].forEach(s => {
+  ['screen-setup','screen-login','screen-admin','screen-manager','screen-employee'].forEach(s => {
     const el = document.getElementById(s);
     if (el) el.classList.toggle('hidden', s !== id);
   });
@@ -1212,6 +1226,7 @@ Views.Employees = {
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${emp.petpooja_id||''}" /></div>
         <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${emp.petpooja_name||''}" /></div>
         <div class="field"><label>Weekly Salary (₹) *</label><input id="ef-salary" type="number" value="${emp.weekly_salary||''}" /></div>
+        <div class="field"><label>Login Code</label><input id="ef-logincode" value="${emp.login_code||''}" placeholder="e.g. emp001" /></div>
         <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${emp.joining_date||''}" /></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:4px">
@@ -1254,6 +1269,7 @@ Views.Employees = {
       petpooja_id:  document.getElementById('ef-pid')?.value.trim(),
       petpooja_name:document.getElementById('ef-pname')?.value.trim() || name,
       weekly_salary: salary,
+      login_code:   document.getElementById('ef-logincode')?.value.trim(),
       joining_date: document.getElementById('ef-join')?.value,
       status: 'Active'
     };
@@ -2192,6 +2208,142 @@ const ManagerApp = {
         html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
       }
     } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
+  }
+};
+
+// ============================================================
+// EMPLOYEE APP
+// ============================================================
+const EmployeeApp = {
+  currentMonth: new Date().toISOString().substring(0, 7),
+
+  init() {
+    show('screen-employee');
+    const c = document.getElementById('screen-employee');
+    c.innerHTML = `
+      <div style="max-width:680px;margin:0 auto;padding:20px 16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+          <div style="font-weight:700;font-size:18px">MP-SAL</div>
+          <span style="flex:1"></span>
+          <span style="font-size:14px;color:var(--muted)">${State.empName}</span>
+          <button class="btn btn-secondary btn-sm" onclick="Auth.logout()">Logout</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <label style="font-weight:600;font-size:14px">Pay Slip for</label>
+          <input type="month" id="emp-month" value="${this.currentMonth}"
+            style="padding:6px 10px" onchange="EmployeeApp.load(this.value)" />
+        </div>
+        <div id="emp-slip"></div>
+      </div>`;
+    this.load(this.currentMonth);
+  },
+
+  async load(month) {
+    this.currentMonth = month;
+    const slip = document.getElementById('emp-slip');
+    if (!slip) return;
+    slip.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await API.call('getEmployeePayslip', { emp_id: State.empId, month });
+      const { payroll: p, advances } = r.data || {};
+      if (!p) {
+        slip.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);padding:32px">No payroll data found for ${month}.</div>`;
+        return;
+      }
+      const advTotal    = advances.reduce((s, a) => s + a.amount, 0);
+      const grossTotal  = (p.gross_pay || 0) + (p.ot_earnings || 0);
+      const deductions  = (p.shortfall_deduction || 0) + advTotal;
+      const net         = grossTotal - deductions;
+
+      const periodLabel = p.adv_start_date && p.adv_end_date
+        ? `${p.adv_start_date} to ${p.adv_end_date}`
+        : '—';
+
+      slip.innerHTML = `
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+            <div>
+              <div style="font-size:20px;font-weight:700">${State.empName}</div>
+              <div style="color:var(--muted);font-size:13px">Pay Slip &nbsp;·&nbsp; ${month}</div>
+            </div>
+            <div style="text-align:right;font-size:13px;color:var(--muted)">
+              <div>Advance Period</div>
+              <div style="font-weight:600;color:var(--text)">${periodLabel}</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Attendance</div>
+              ${this._row('Full Days', p.full_days)}
+              ${this._row('Half Days', p.half_days)}
+              ${this._row('Absent', p.absent_days)}
+              ${this._row('Week Off', p.week_off_days)}
+            </div>
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">OT</div>
+              ${this._row('Weekday OT', fmtHrs(p.ot_weekday_min))}
+              ${this._row('Sunday OT',  fmtHrs(p.ot_sunday_min))}
+              ${this._row('Holiday OT', fmtHrs(p.ot_holiday_min))}
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:16px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div>
+                <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Earnings</div>
+                ${this._row('Gross Pay',   fmt(p.gross_pay || 0))}
+                ${this._row('OT Earnings', fmt(p.ot_earnings || 0))}
+                <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--border);font-weight:700;margin-top:4px">
+                  <span>Total Earnings</span><span>${fmt(grossTotal)}</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Deductions</div>
+                ${this._row('Shortfall', fmt(p.shortfall_deduction || 0))}
+                ${this._row('Advances',  fmt(advTotal))}
+                <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--border);font-weight:700;margin-top:4px">
+                  <span>Total Deductions</span><span>${fmt(deductions)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:var(--primary);color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:700;font-size:15px">Net In-Hand</span>
+            <span style="font-weight:800;font-size:20px">${fmt(net)}</span>
+          </div>
+        </div>
+
+        ${advances.length ? `
+        <div class="card">
+          <div style="font-size:14px;font-weight:700;margin-bottom:12px">Advance Details &nbsp;<span style="font-size:12px;font-weight:400;color:var(--muted)">(${periodLabel})</span></div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead style="background:var(--surface2)">
+              <tr>
+                <th style="padding:8px 10px;text-align:left">Date</th>
+                <th style="padding:8px 10px;text-align:right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${advances.map(a => `<tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:9px 10px">${a.date}</td>
+                <td style="padding:9px 10px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
+              </tr>`).join('')}
+              <tr style="background:var(--surface2)">
+                <td style="padding:9px 10px;font-weight:700">Total Advance Deducted</td>
+                <td style="padding:9px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>` : ''}`;
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  _row(label, val) {
+    return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="color:var(--muted)">${label}</span><span style="font-weight:500">${val ?? '—'}</span>
+    </div>`;
   }
 };
 
