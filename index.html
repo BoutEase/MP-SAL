@@ -158,6 +158,8 @@ const State = {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   })(),
+  advStartDate: '',
+  advEndDate: new Date().toISOString().split('T')[0],
   parsedAttendance: null,
   unmatchedAttendance: [],
   attendanceMap: {}   // emp_id → parsed day array
@@ -536,9 +538,40 @@ Views.Payroll = {
       <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.saveDraft()">Save Draft</button>
       <button class="btn btn-primary btn-sm" onclick="Views.Payroll.finalize()">Finalise Month</button>
     </div>
+    <div class="card" style="margin-bottom:14px;padding:14px 16px">
+      <div style="font-weight:600;font-size:14px;margin-bottom:10px">Advance Deduction Period</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="margin:0">
+          <label>From</label>
+          <input type="date" id="adv-start" value="${State.advStartDate}"
+            onchange="State.advStartDate=this.value" />
+        </div>
+        <div class="field" style="margin:0">
+          <label>To</label>
+          <input type="date" id="adv-end" value="${State.advEndDate}"
+            onchange="State.advEndDate=this.value" />
+        </div>
+        <span style="font-size:12px;color:var(--muted);padding-bottom:6px">Only <strong>Approved</strong> advances in this date range are deducted from salary</span>
+      </div>
+    </div>
     <div id="payroll-unmatched"></div>
     <div id="payroll-table-wrap"><p style="color:var(--muted);font-size:14px">Upload a Petpooja Excel to calculate payroll, or load saved draft below.</p></div>
     <div style="margin-top:12px"><button class="btn btn-secondary btn-sm" onclick="Views.Payroll.loadDraft()">Load Saved Draft</button></div>`;
+    this.prefillAdvStartDate();
+  },
+
+  async prefillAdvStartDate() {
+    if (State.advStartDate) return;
+    try {
+      const r = await API.call('getPayroll', {});
+      const finalized = (r.data || []).filter(p => p.status === 'finalized' && p.adv_end_date);
+      if (!finalized.length) return;
+      const lastEnd = finalized.map(p => p.adv_end_date).sort().pop();
+      const d = new Date(lastEnd); d.setDate(d.getDate() + 1);
+      State.advStartDate = d.toISOString().split('T')[0];
+      const el = document.getElementById('adv-start');
+      if (el) el.value = State.advStartDate;
+    } catch(e) {}
   },
 
   onMonthChange(m) { State.currentMonth = m; },
@@ -556,10 +589,19 @@ Views.Payroll = {
         document.getElementById('payroll-month').value = month;
         State.currentMonth = month;
 
-        // Load holidays and advances
+        // Read advance date range from inputs
+        State.advStartDate = document.getElementById('adv-start')?.value || '';
+        State.advEndDate   = document.getElementById('adv-end')?.value   || '';
+
+        // Load holidays and approved advances in date range
+        const advFilter = { status: 'Approved' };
+        if (State.advStartDate && State.advEndDate) {
+          advFilter.start_date = State.advStartDate;
+          advFilter.end_date   = State.advEndDate;
+        }
         const [holRes, advRes] = await Promise.all([
           API.call('getHolidays', { year: month.substring(0,4) }),
-          API.call('getAdvances', { month })
+          API.call('getAdvances', advFilter)
         ]);
         State.holidays = holRes.data || [];
         State.advances = advRes.data || [];
@@ -994,21 +1036,44 @@ Views.Payroll = {
   async saveDraft() {
     if (!State.payroll.length) { toast('Nothing to save', 'error'); return; }
     try {
-      await API.call('savePayroll', State.payroll);
+      const records = State.payroll.map(p => Object.assign({}, p, {
+        adv_start_date: State.advStartDate,
+        adv_end_date:   State.advEndDate
+      }));
+      await API.call('savePayroll', records);
       toast('Draft saved', 'success');
     } catch(e) { toast(e.message, 'error'); }
   },
 
   async loadDraft() {
     try {
-      const [holRes, advRes, payRes] = await Promise.all([
+      const [holRes, payRes] = await Promise.all([
         API.call('getHolidays', { year: currentYear() }),
-        API.call('getAdvances', { month: State.currentMonth }),
         API.call('getPayroll', { month: State.currentMonth })
       ]);
       State.holidays = holRes.data || [];
-      State.advances = advRes.data || [];
       State.payroll  = payRes.data || [];
+
+      // Restore advance date range from saved records
+      const sample = State.payroll.find(p => p.adv_end_date);
+      if (sample) {
+        State.advStartDate = sample.adv_start_date || '';
+        State.advEndDate   = sample.adv_end_date   || '';
+        const s = document.getElementById('adv-start');
+        const e = document.getElementById('adv-end');
+        if (s) s.value = State.advStartDate;
+        if (e) e.value = State.advEndDate;
+      }
+
+      // Fetch approved advances for that date range
+      const advFilter = { status: 'Approved' };
+      if (State.advStartDate && State.advEndDate) {
+        advFilter.start_date = State.advStartDate;
+        advFilter.end_date   = State.advEndDate;
+      }
+      const advRes = await API.call('getAdvances', advFilter);
+      State.advances = advRes.data || [];
+
       this.renderTable(State.payroll);
       toast(`Loaded ${State.payroll.length} records`, 'success');
     } catch(e) { toast(e.message, 'error'); }
@@ -1016,12 +1081,19 @@ Views.Payroll = {
 
   async finalize() {
     const month = State.currentMonth;
-    if (!confirm(`Finalise payroll for ${month}? This cannot be undone.`)) return;
+    if (!State.advEndDate) { toast('Set the advance deduction end date before finalising', 'error'); return; }
+    if (!confirm(`Finalise payroll for ${month}?\nAdvance period: ${State.advStartDate||'start'} → ${State.advEndDate}\nThis cannot be undone.`)) return;
     try {
-      // Save current state first
-      await API.call('savePayroll', State.payroll);
-      const r = await API.call('finalizePayroll', { month });
+      const records = State.payroll.map(p => Object.assign({}, p, {
+        adv_start_date: State.advStartDate,
+        adv_end_date:   State.advEndDate
+      }));
+      await API.call('savePayroll', records);
+      const r = await API.call('finalizePayroll', { month, adv_end_date: State.advEndDate });
       toast(`Finalised ${r.finalized} records`, 'success');
+      // Next payroll's start date = this end date + 1 day
+      const d = new Date(State.advEndDate); d.setDate(d.getDate() + 1);
+      State.advStartDate = d.toISOString().split('T')[0];
       await this.loadDraft();
     } catch(e) { toast(e.message, 'error'); }
   }
@@ -1158,92 +1230,126 @@ Views.Employees = {
 // VIEWS — ADVANCES
 // ============================================================
 Views.Advances = {
+  activeTab: 'pending',
+  all: [],
+
   async load() {
     const c = document.getElementById('view-advances');
-    c.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <h2 style="font-size:18px;font-weight:700">Advances</h2>
-      <input type="month" id="adv-month" value="${State.currentMonth}" style="width:auto;padding:6px 10px"
-        onchange="State.currentMonth=this.value;Views.Advances.fetch()" />
-      <span style="flex:1"></span>
-      <button class="btn btn-primary btn-sm" onclick="Views.Advances.openForm()">+ Add Advance</button>
-    </div>
-    <div id="adv-form-wrap"></div>
-    <div id="adv-list"></div>`;
+    c.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <h2 style="font-size:18px;font-weight:700">Advances</h2>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary btn-sm" onclick="Views.Advances.openForm()">+ Add Advance</button>
+      </div>
+      <div id="adv-form-wrap"></div>
+      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid var(--border)">
+        <button id="tab-btn-pending"  onclick="Views.Advances.showTab('pending')"
+          style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:14px;font-weight:600;border-bottom:2px solid var(--primary);margin-bottom:-2px;color:var(--primary)">
+          Pending <span id="tab-count-pending" style="background:var(--warning);color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;margin-left:4px"></span>
+        </button>
+        <button id="tab-btn-approved" onclick="Views.Advances.showTab('approved')"
+          style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:14px;color:var(--muted)">
+          Approved <span id="tab-count-approved" style="background:var(--success);color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;margin-left:4px"></span>
+        </button>
+      </div>
+      <div id="adv-list"></div>`;
     await this.fetch();
   },
 
   async fetch() {
     try {
-      const r = await API.call('getAdvances', { month: State.currentMonth });
-      State.advances = r.data || [];
+      const r = await API.call('getAdvances', {});
+      this.all = r.data || [];
       this.renderList();
     } catch(e) { toast(e.message, 'error'); }
   },
 
+  showTab(tab) {
+    this.activeTab = tab;
+    ['pending','approved'].forEach(t => {
+      const btn = document.getElementById('tab-btn-' + t);
+      if (!btn) return;
+      if (t === tab) {
+        btn.style.borderBottom = '2px solid var(--primary)';
+        btn.style.marginBottom = '-2px';
+        btn.style.color = 'var(--primary)';
+      } else {
+        btn.style.borderBottom = 'none';
+        btn.style.marginBottom = '0';
+        btn.style.color = 'var(--muted)';
+      }
+    });
+    this.renderList();
+  },
+
   renderList() {
+    const pending  = this.all.filter(a => a.status === 'Pending');
+    const approved = this.all.filter(a => a.status === 'Approved');
+    const pc = document.getElementById('tab-count-pending');
+    const ac = document.getElementById('tab-count-approved');
+    if (pc) pc.textContent = pending.length || '';
+    if (ac) ac.textContent = approved.length || '';
+
+    const list = (this.activeTab === 'pending' ? pending : approved)
+      .sort((a, b) => b.date > a.date ? 1 : -1);
     const c = document.getElementById('adv-list');
-    const list = State.advances;
-    if (!list.length) { c.innerHTML = '<p style="color:var(--muted)">No advances for this month.</p>'; return; }
-
-    // Group by employee
-    const byEmp = {};
-    list.forEach(a => { (byEmp[a.emp_id] = byEmp[a.emp_id] || []).push(a); });
-
+    if (!list.length) {
+      c.innerHTML = `<p style="color:var(--muted)">No ${this.activeTab} advances.</p>`;
+      return;
+    }
     c.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead style="background:var(--surface2)">
         <tr>
           <th style="padding:10px 8px;text-align:left">Date</th>
           <th style="padding:10px 8px;text-align:left">Employee</th>
           <th style="padding:10px 8px;text-align:right">Amount</th>
-          <th style="padding:10px 8px">Mode</th>
-          <th style="padding:10px 8px">Notes</th>
-          <th style="padding:10px 8px">By</th>
+          <th style="padding:10px 8px">Submitted by</th>
           <th style="padding:10px 8px"></th>
         </tr>
       </thead>
-      <tbody>${list.sort((a,b)=>a.date>b.date?-1:1).map(a => `
+      <tbody>${list.map(a => `
         <tr style="border-bottom:1px solid var(--border)">
           <td style="padding:10px 8px">${a.date}</td>
           <td style="padding:10px 8px;font-weight:500">${a.emp_name}</td>
           <td style="padding:10px 8px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
-          <td style="padding:10px 8px;text-align:center"><span class="badge badge-primary">${a.mode}</span></td>
-          <td style="padding:10px 8px;color:var(--muted)">${a.notes||'—'}</td>
           <td style="padding:10px 8px;color:var(--muted)">${a.created_by||'—'}</td>
-          <td style="padding:10px 8px;display:flex;gap:4px">
-            <button class="btn btn-secondary btn-sm" onclick="Views.Advances.openForm('${a.advance_id}')">Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="Views.Advances.remove('${a.advance_id}')">✕</button>
+          <td style="padding:10px 8px">
+            <div style="display:flex;gap:4px;justify-content:flex-end">
+              ${this.activeTab === 'pending' ? `
+                <button class="btn btn-primary btn-sm" onclick="Views.Advances.approve('${a.advance_id}')">Approve</button>
+                <button class="btn btn-secondary btn-sm" onclick="Views.Advances.openForm('${a.advance_id}')">Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="Views.Advances.remove('${a.advance_id}','Reject')">Reject</button>
+              ` : `
+                <button class="btn btn-danger btn-sm" onclick="Views.Advances.remove('${a.advance_id}','Delete')">Delete</button>
+              `}
+            </div>
           </td>
         </tr>`).join('')}
       </tbody></table></div>
       <p style="font-size:13px;color:var(--muted);margin-top:8px">
-        Total advances: <strong>${fmt(list.reduce((s,a)=>s+a.amount,0))}</strong>
+        Total: <strong>${fmt(list.reduce((s,a)=>s+a.amount,0))}</strong>
       </p>`;
   },
 
   openForm(advId) {
-    const adv = advId ? State.advances.find(a => a.advance_id === advId) : {};
+    const adv = advId ? this.all.find(a => a.advance_id === advId) : null;
+    const today = new Date().toISOString().split('T')[0];
     const c = document.getElementById('adv-form-wrap');
     c.innerHTML = `<div class="card" style="margin-bottom:16px">
-      <h3 style="font-size:15px;margin-bottom:14px">${advId ? 'Edit' : 'Add'} Advance</h3>
+      <h3 style="font-size:15px;margin-bottom:14px">${advId ? 'Edit Advance' : 'Add Advance'}</h3>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
         <div class="field"><label>Employee *</label>
-          <select id="af-emp">
+          <select id="af-emp" ${advId ? 'disabled' : ''}>
             <option value="">— select —</option>
             ${State.employees.filter(e=>e.status==='Active').map(e =>
-              `<option value="${e.emp_id}" ${adv.emp_id===e.emp_id?'selected':''}>${e.name}</option>`).join('')}
+              `<option value="${e.emp_id}" ${adv?.emp_id===e.emp_id?'selected':''}>${e.name}</option>`).join('')}
           </select></div>
-        <div class="field"><label>Date *</label><input type="date" id="af-date" value="${adv.date||new Date().toISOString().split('T')[0]}" /></div>
-        <div class="field"><label>Amount (₹) *</label><input type="number" id="af-amt" value="${adv.amount||''}" /></div>
-        <div class="field"><label>Mode</label>
-          <select id="af-mode">
-            <option ${adv.mode==='Cash'?'selected':''}>Cash</option>
-            <option ${adv.mode==='GPay'?'selected':''}>GPay</option>
-          </select></div>
-        <div class="field"><label>Deduct from Month</label>
-          <input type="month" id="af-month" value="${adv.month||State.currentMonth}" /></div>
-        <div class="field"><label>Notes</label><input id="af-notes" value="${adv.notes||''}" /></div>
+        <div class="field"><label>Date *</label>
+          <input type="date" id="af-date" value="${adv?.date||today}" /></div>
+        <div class="field"><label>Amount (₹) *</label>
+          <input type="number" id="af-amt" value="${adv?.amount||''}" placeholder="0" /></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:4px">
+      <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-primary btn-sm" onclick="Views.Advances.save('${advId||''}')">Save</button>
         <button class="btn btn-secondary btn-sm" onclick="Views.Advances.closeForm()">Cancel</button>
       </div>
@@ -1252,32 +1358,38 @@ Views.Advances = {
 
   closeForm() { document.getElementById('adv-form-wrap').innerHTML = ''; },
 
+  async approve(advId) {
+    try {
+      await API.call('approveAdvance', { advance_id: advId });
+      await this.fetch();
+      toast('Advance approved', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
   async save(advId) {
     const empId = document.getElementById('af-emp')?.value;
     const amt   = parseFloat(document.getElementById('af-amt')?.value);
     if (!empId || !amt) { toast('Employee and amount required', 'error'); return; }
-    const emp  = State.employees.find(e => e.emp_id === empId);
-    const data = {
-      advance_id: advId || null, emp_id: empId, emp_name: emp?.name || empId,
-      date:       document.getElementById('af-date')?.value,
-      amount:     amt,
-      mode:       document.getElementById('af-mode')?.value,
-      month:      document.getElementById('af-month')?.value,
-      notes:      document.getElementById('af-notes')?.value,
-      created_by: 'Admin'
-    };
+    const emp = State.employees.find(e => e.emp_id === empId);
     try {
-      await API.call('saveAdvance', data);
+      await API.call('saveAdvance', {
+        advance_id: advId || null,
+        emp_id: empId, emp_name: emp?.name || empId,
+        date:   document.getElementById('af-date')?.value,
+        amount: amt,
+        created_by: 'Admin'
+      });
       this.closeForm(); await this.fetch();
       toast('Advance saved', 'success');
     } catch(e) { toast(e.message, 'error'); }
   },
 
-  async remove(advId) {
-    if (!confirm('Delete this advance?')) return;
+  async remove(advId, action) {
+    if (!confirm(`${action} this advance?`)) return;
     try {
       await API.call('deleteAdvance', { advance_id: advId });
-      await this.fetch(); toast('Deleted', 'success');
+      await this.fetch();
+      toast(action + 'ed', 'success');
     } catch(e) { toast(e.message, 'error'); }
   }
 };
@@ -1591,12 +1703,7 @@ const ManagerApp = {
           </select></div>
         <div class="field"><label>Date *</label><input type="date" id="m-date" value="${new Date().toISOString().split('T')[0]}" /></div>
         <div class="field"><label>Amount (₹) *</label><input type="number" id="m-amt" placeholder="0" /></div>
-        <div class="field"><label>Mode</label>
-          <select id="m-mode"><option>Cash</option><option>GPay</option></select></div>
-        <div class="field"><label>Deduct from Month</label>
-          <input type="month" id="m-month" value="${State.currentMonth}" /></div>
-        <div class="field"><label>Notes</label><input id="m-notes" placeholder="Optional" /></div>
-        <button class="btn btn-primary" style="width:100%" onclick="ManagerApp.submit()">Submit Advance</button>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="ManagerApp.submit()">Submit Advance</button>
       </div>
       <h3 style="font-size:15px;font-weight:600;margin-bottom:10px">Today's Advances</h3>
       <div id="m-recent"></div>
@@ -1614,13 +1721,9 @@ const ManagerApp = {
         emp_id: empId, emp_name: emp?.name || empId,
         date:   document.getElementById('m-date')?.value,
         amount: amt,
-        mode:   document.getElementById('m-mode')?.value,
-        month:  document.getElementById('m-month')?.value,
-        notes:  document.getElementById('m-notes')?.value,
         created_by: 'Manager'
       });
       document.getElementById('m-amt').value = '';
-      document.getElementById('m-notes').value = '';
       await this.loadRecent();
       toast('Advance submitted for ' + emp?.name, 'success');
     } catch(e) { toast(e.message, 'error'); }
@@ -1629,13 +1732,16 @@ const ManagerApp = {
   async loadRecent() {
     const today = new Date().toISOString().split('T')[0];
     try {
-      const r = await API.call('getAdvances', { month: State.currentMonth });
-      const todayList = (r.data || []).filter(a => a.date === today && a.created_by === 'Manager');
+      const r = await API.call('getAdvances', { start_date: today, end_date: today });
+      const todayList = (r.data || []).filter(a => a.created_by === 'Manager');
       const c = document.getElementById('m-recent');
       if (!todayList.length) { c.innerHTML = '<p style="color:var(--muted);font-size:14px">None yet today.</p>'; return; }
       c.innerHTML = todayList.map(a => `
         <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
-          <div style="flex:1"><strong>${a.emp_name}</strong><br><span style="font-size:12px;color:var(--muted)">${a.mode} · ${a.notes||'—'}</span></div>
+          <div style="flex:1"><strong>${a.emp_name}</strong>
+            <br><span style="font-size:12px;color:var(--muted)">${a.date}</span>
+            <span style="font-size:11px;margin-left:8px;background:var(--warning);color:#fff;padding:1px 6px;border-radius:99px">${a.status}</span>
+          </div>
           <div style="font-size:18px;font-weight:700">${fmt(a.amount)}</div>
         </div>`).join('');
     } catch(e) {}
