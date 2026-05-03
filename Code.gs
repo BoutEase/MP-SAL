@@ -373,8 +373,11 @@ function getPayroll(month) {
   const sheet = getSheet('Payroll');
   var rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; })
     .map(function(r) {
+      var m = r[2];
+      if (m instanceof Date) m = Utilities.formatDate(m, 'Asia/Kolkata', 'yyyy-MM');
+      else m = String(m).substring(0, 7);
       return {
-        payroll_id: r[0], emp_id: r[1], month: r[2],
+        payroll_id: r[0], emp_id: r[1], month: m,
         full_days: r[3], half_days: r[4], absent_days: r[5],
         week_off_days: r[6], holiday_absent_days: r[7],
         ot_weekday_min: r[8], ot_sunday_min: r[9], ot_holiday_min: r[10],
