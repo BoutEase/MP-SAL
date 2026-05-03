@@ -417,7 +417,11 @@ function savePayroll(records) {
     ];
 
     const idx = existing.findIndex(function(r, i) {
-      return i > 0 && r[1] === rec.emp_id && r[2] === rec.month;
+      if (i === 0) return false;
+      var rowMonth = r[2] instanceof Date ?
+        Utilities.formatDate(r[2], 'Asia/Kolkata', 'yyyy-MM') :
+        String(r[2]).substring(0, 7);
+      return r[1] === rec.emp_id && rowMonth === rec.month;
     });
 
     if (idx > 0) {
