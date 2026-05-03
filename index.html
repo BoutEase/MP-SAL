@@ -679,8 +679,15 @@ Views.Payroll = {
 
         this.renderUnmatched(unmatched);
         this.renderTable(matched);
-        toast(`Calculated payroll for ${matched.length} employees`, 'success');
-      } catch(err) { toast('Parse error: ' + err.message, 'error'); }
+        if (matched.length) {
+          toast(`Calculated payroll for ${matched.length} employee(s) — ${unmatched.length} unmatched`, 'success');
+        } else {
+          toast(`0 employees matched. Use the mapping panel below to assign them manually.`, 'error');
+        }
+      } catch(err) {
+        console.error('Upload error:', err);
+        toast('Error: ' + err.message, 'error');
+      }
     };
     reader.readAsArrayBuffer(file);
   },
@@ -743,7 +750,8 @@ Views.Payroll = {
 
   renderTable(payroll) {
     const wrap = document.getElementById('payroll-table-wrap');
-    if (!payroll.length) { wrap.innerHTML = '<p style="color:var(--muted)">No payroll data.</p>'; return; }
+    if (!wrap) return;
+    if (!payroll || !payroll.length) { wrap.innerHTML = '<p style="color:var(--muted)">No payroll data.</p>'; return; }
 
     const empMap = {};
     State.employees.forEach(e => empMap[e.emp_id] = e);
