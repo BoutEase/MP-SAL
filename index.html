@@ -1793,6 +1793,13 @@ const ManagerApp = {
   async submit() {
     const date = document.getElementById('m-date')?.value;
     if (!date) { toast('Select a date', 'error'); return; }
+
+    // Fresh fetch before processing so existing advances are always current
+    try {
+      const r = await API.call('getAdvances', { start_date: date, end_date: date });
+      this.dateAdvances = r.data || [];
+    } catch(e) { toast(e.message, 'error'); return; }
+
     const emps = State.employees.filter(e => e.status === 'Active');
     const ops = [];
     let count = 0;
