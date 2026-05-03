@@ -303,10 +303,10 @@ function saveAdvance(data) {
       data.amount, 'Pending', data.created_by || 'Manager', data.created_at
     ]);
   } else {
-    // Edit: only update date and amount; keep status/created_by/created_at unchanged
+    // Edit: update date and amount, reset to Pending so admin re-approves
     const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.advance_id; });
     if (idx > 0) {
-      sheet.getRange(idx + 1, 4, 1, 2).setValues([[data.date, data.amount]]);
+      sheet.getRange(idx + 1, 4, 1, 3).setValues([[data.date, data.amount, 'Pending']]);
     }
   }
   return { success: true, advance_id: data.advance_id };
