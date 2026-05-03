@@ -630,22 +630,17 @@ Views.Payroll = {
         const parsed = Parser.parse(new Uint8Array(ev.target.result));
         if (!parsed.length) { toast('No employee data found in file', 'error'); return; }
 
-        const month = parsed[0].month;
-        document.getElementById('payroll-month').value = month;
-        State.currentMonth = month;
-
-        // Read advance date range from inputs
+        // Keep the month the user has selected — don't override from Excel's From date
         State.advStartDate = document.getElementById('adv-start')?.value || '';
         State.advEndDate   = document.getElementById('adv-end')?.value   || '';
 
-        // Load holidays and approved advances in date range
         const advFilter = { status: 'Approved' };
         if (State.advStartDate && State.advEndDate) {
           advFilter.start_date = State.advStartDate;
           advFilter.end_date   = State.advEndDate;
         }
         const [holRes, advRes] = await Promise.all([
-          API.call('getHolidays', { year: month.substring(0,4) }),
+          API.call('getHolidays', { year: State.currentMonth.substring(0,4) }),
           API.call('getAdvances', advFilter)
         ]);
         State.holidays = holRes.data || [];
