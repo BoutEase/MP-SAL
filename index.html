@@ -1707,6 +1707,7 @@ const ManagerApp = {
           <table style="width:100%;border-collapse:collapse;font-size:14px" id="m-emp-table">
             <thead style="background:var(--surface2)">
               <tr>
+                <th style="padding:10px 12px;text-align:left;font-weight:600">ID</th>
                 <th style="padding:10px 12px;text-align:left;font-weight:600">Employee</th>
                 <th style="padding:10px 12px;text-align:right;font-weight:600">Amount (₹)</th>
               </tr>
@@ -1739,6 +1740,7 @@ const ManagerApp = {
       const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
       const val = existing ? existing.amount : '';
       return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 12px;color:var(--muted);font-size:13px">${emp.petpooja_id||'—'}</td>
         <td style="padding:10px 12px;font-weight:500">${emp.name}</td>
         <td style="padding:8px 12px;text-align:right">
           <input type="number" id="m-amt-${emp.emp_id}" value="${val}" placeholder="—"
