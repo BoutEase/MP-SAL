@@ -9,6 +9,7 @@
   <title>MP-SAL Payroll</title>
   <link rel="manifest" href="manifest.json">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     :root {
       --bg: #f8fafc; --surface: #ffffff; --surface2: #f1f5f9;
@@ -1938,7 +1939,11 @@ const ManagerApp = {
     c.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h3 style="font-size:15px;font-weight:600">Submitted for ${date}</h3>
-        <button class="btn btn-secondary btn-sm" onclick="ManagerApp.downloadPDF()">Download PDF</button>
+        <button class="btn btn-secondary btn-sm" onclick="ManagerApp.savePDF()">Save PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="ManagerApp.sharePDF()" style="display:flex;align-items:center;gap:5px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 16c-.8 0-1.5.3-2 .8l-7.3-4.2c.1-.2.1-.4.1-.6s0-.4-.1-.6L16 7.2c.5.5 1.2.8 2 .8 1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3c0 .2 0 .4.1.6L7.8 9.8C7.3 9.3 6.6 9 5.8 9c-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-.8l7.3 4.2c-.1.2-.1.4-.1.6 0 1.6 1.3 2.9 2.9 2.9s2.9-1.3 2.9-2.9-1.2-3-2.8-3z"/></svg>
+          Share
+        </button>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1996,19 +2001,15 @@ const ManagerApp = {
     } catch(e) { toast(e.message, 'error'); }
   },
 
-  downloadPDF() {
-    if (!this.dateAdvances.length) return;
+  _buildPDFElement() {
     const date    = document.getElementById('m-date')?.value || this.dateAdvances[0]?.date;
     const company = State.settings?.COMPANY_NAME || 'Mahitha Prasad';
-
-    // Enrich with employee data
     const enriched = this.dateAdvances.map(a => {
       const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
       return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
     });
     const teams = [...new Set(enriched.map(a => a.team))].sort();
     const grandTotal = enriched.reduce((s, a) => s + a.amount, 0);
-
     let bodyRows = '';
     teams.forEach(team => {
       const group = enriched.filter(a => a.team === team).sort((a,b) => a.emp_name.localeCompare(b.emp_name));
@@ -2018,47 +2019,56 @@ const ManagerApp = {
         <tr>
           <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px">${a.petpooja_id}</td>
           <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0">${a.emp_name}</td>
-          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">₹${a.amount.toLocaleString('en-IN')}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">&#8377;${a.amount.toLocaleString('en-IN')}</td>
           <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:11px;color:${a.status==='Approved'?'#15803d':'#92400e'}">${a.status}</td>
         </tr>`).join('');
       bodyRows += `<tr style="background:#fef9c3"><td colspan="2" style="padding:9px 12px;font-weight:700">${team} Total</td>
-        <td style="padding:9px 12px;text-align:right;font-weight:700">₹${sub.toLocaleString('en-IN')}</td><td></td></tr>`;
+        <td style="padding:9px 12px;text-align:right;font-weight:700">&#8377;${sub.toLocaleString('en-IN')}</td><td></td></tr>`;
     });
+    const el = document.createElement('div');
+    el.innerHTML = `
+      <div style="font-family:Arial,sans-serif;padding:32px;color:#1e293b;max-width:640px;margin:0 auto">
+        <h1 style="font-size:20px;margin:0 0 4px">${company} &#8212; Advance Report</h1>
+        <div style="color:#64748b;font-size:13px;margin-bottom:24px">Date: ${date} &nbsp;&middot;&nbsp; Submitted by: Manager &nbsp;&middot;&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead style="background:#1e3a5f;color:#fff">
+            <tr><th style="padding:10px 12px;text-align:left;font-size:13px">ID</th><th style="padding:10px 12px;text-align:left;font-size:13px">Employee</th><th style="padding:10px 12px;text-align:right;font-size:13px">Amount</th><th style="padding:10px 12px;text-align:center;font-size:13px">Status</th></tr>
+          </thead>
+          <tbody>
+            ${bodyRows}
+            <tr style="background:#f97316;color:#fff">
+              <td colspan="2" style="padding:10px 12px;font-weight:700">Grand Total &#8212; ${enriched.length} advance${enriched.length>1?'s':''}</td>
+              <td style="padding:10px 12px;text-align:right;font-weight:700">&#8377;${grandTotal.toLocaleString('en-IN')}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:32px;font-size:12px;color:#94a3b8">MP-SAL Payroll System</div>
+      </div>`;
+    return { el, date };
+  },
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Advance Report ${date}</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 32px; color: #1e293b; max-width: 640px; margin: 0 auto; }
-        h1 { font-size: 20px; margin: 0 0 4px; }
-        .sub { color: #64748b; font-size: 13px; margin-bottom: 24px; }
-        table { width: 100%; border-collapse: collapse; }
-        thead { background: #1e3a5f; color: white; }
-        th { padding: 10px 12px; text-align: left; font-size: 13px; }
-        th:nth-child(3) { text-align: right; }
-        th:nth-child(4) { text-align: center; }
-        .footer { margin-top: 32px; font-size: 12px; color: #94a3b8; }
-      </style>
-    </head><body>
-      <h1>${company} — Advance Report</h1>
-      <div class="sub">Date: ${date} &nbsp;·&nbsp; Submitted by: Manager &nbsp;·&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</div>
-      <table>
-        <thead><tr><th>ID</th><th>Employee</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
-        <tbody>
-          ${bodyRows}
-          <tr style="background:#f97316;color:#fff">
-            <td colspan="2" style="padding:10px 12px;font-weight:700">Grand Total &mdash; ${enriched.length} advance${enriched.length>1?'s':''}</td>
-            <td style="padding:10px 12px;text-align:right;font-weight:700">₹${grandTotal.toLocaleString('en-IN')}</td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="footer">MP-SAL Payroll System</div>
-    </body></html>`;
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 400);
+  savePDF() {
+    if (!this.dateAdvances.length) return;
+    const { el, date } = this._buildPDFElement();
+    html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
+  },
+
+  async sharePDF() {
+    if (!this.dateAdvances.length) return;
+    if (!navigator.share) { toast('Sharing not supported on this browser — use Save PDF instead', 'error'); return; }
+    const { el, date } = this._buildPDFElement();
+    try {
+      toast('Generating PDF…', 'success');
+      const blob = await html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).outputPdf('blob');
+      const file = new File([blob], `advances-${date}.pdf`, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Advances ${date}` });
+      } else {
+        toast('File sharing not supported — saving instead', 'error');
+        html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
+      }
+    } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
   }
 };
 
