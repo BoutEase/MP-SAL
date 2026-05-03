@@ -666,9 +666,13 @@ Views.Payroll = {
   renderUnmatched(list) {
     const c = document.getElementById('payroll-unmatched');
     if (!list.length) { c.innerHTML = ''; return; }
-    c.innerHTML = `<div class="card" style="margin-bottom:12px;border-color:var(--warning);background:var(--warning-light)">
-      <strong style="font-size:14px">⚠ ${list.length} employee(s) not matched — map them to continue:</strong>
-      <table style="width:100%;margin-top:8px;font-size:13px;border-collapse:collapse">
+    c.innerHTML = `<div class="card" style="margin-bottom:12px;border-color:var(--warning)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <strong style="font-size:14px">⚠ ${list.length} Petpooja employee(s) not matched — will be skipped</strong>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('payroll-unmatched').innerHTML=''">Dismiss</button>
+      </div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
         <thead><tr><th style="text-align:left;padding:4px 8px">Petpooja Name (ID)</th><th style="padding:4px 8px">Map to Employee</th><th></th></tr></thead>
         <tbody>${list.map((u, i) => `
           <tr>
