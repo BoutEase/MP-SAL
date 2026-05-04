@@ -55,6 +55,7 @@ function doPost(e) {
       getSettings:          () => getSettings(),
       saveSettings:         () => saveSettings(data),
       getEmployeePayslip:   () => getEmployeePayslip(data),
+      getEmployeeAdvanceHistory: () => getEmployeeAdvanceHistory(data),
     };
 
     const handler = handlers[action];
@@ -106,6 +107,33 @@ function getEmployeePayslip(data) {
     }).data;
   }
   return { success: true, data: { payroll: pay, advances: advances } };
+}
+
+function getEmployeeAdvanceHistory(data) {
+  var empId = data.emp_id;
+  // Only finalized payslips — each defines a settled advance period
+  var finalized = getPayroll().data
+    .filter(function(p) { return p.emp_id === empId && p.status === 'finalized' && p.adv_start_date && p.adv_end_date; })
+    .sort(function(a, b) { return b.month > a.month ? 1 : -1; });
+
+  var periods = finalized.map(function(p) {
+    var advs = getAdvances({
+      emp_id: empId,
+      status: 'Approved',
+      start_date: p.adv_start_date,
+      end_date: p.adv_end_date
+    }).data.sort(function(a, b) { return a.date > b.date ? 1 : -1; });
+    var total = advs.reduce(function(s, a) { return s + Number(a.amount); }, 0);
+    return {
+      month: p.month,
+      adv_start_date: p.adv_start_date,
+      adv_end_date: p.adv_end_date,
+      advances: advs,
+      total: total
+    };
+  });
+
+  return { success: true, data: periods };
 }
 
 // ---- Settings ----

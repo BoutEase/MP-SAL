@@ -2384,14 +2384,90 @@ const EmployeeApp = {
           <span style="font-size:14px;color:var(--muted)">${State.empName}</span>
           <button class="btn btn-secondary btn-sm" onclick="Auth.logout()">Logout</button>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-          <label style="font-weight:600;font-size:14px">Pay Slip for</label>
-          <input type="month" id="emp-month" value="${this.currentMonth}"
-            style="padding:6px 10px" onchange="EmployeeApp.load(this.value)" />
+
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+          <button id="emp-tab-payslip"  onclick="EmployeeApp.showTab('payslip')"
+            style="background:none;border:none;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary);color:var(--primary);margin-bottom:-1px">Pay Slip</button>
+          <button id="emp-tab-advances" onclick="EmployeeApp.showTab('advances')"
+            style="background:none;border:none;padding:10px 16px;font-size:14px;font-weight:500;cursor:pointer;border-bottom:none;color:var(--muted)">My Advances</button>
         </div>
-        <div id="emp-slip"></div>
+
+        <div id="emp-pane-payslip">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <label style="font-weight:600;font-size:14px">Pay Slip for</label>
+            <input type="month" id="emp-month" value="${this.currentMonth}"
+              style="padding:6px 10px" onchange="EmployeeApp.load(this.value)" />
+          </div>
+          <div id="emp-slip"></div>
+        </div>
+
+        <div id="emp-pane-advances" class="hidden"></div>
       </div>`;
     this.load(this.currentMonth);
+  },
+
+  showTab(tab) {
+    const payTab = document.getElementById('emp-tab-payslip');
+    const advTab = document.getElementById('emp-tab-advances');
+    const payPane = document.getElementById('emp-pane-payslip');
+    const advPane = document.getElementById('emp-pane-advances');
+    const active = (el) => { el.style.borderBottom = '2px solid var(--primary)'; el.style.color = 'var(--primary)'; el.style.marginBottom = '-1px'; };
+    const inactive = (el) => { el.style.borderBottom = 'none'; el.style.color = 'var(--muted)'; el.style.marginBottom = '0'; };
+    if (tab === 'payslip') {
+      active(payTab); inactive(advTab);
+      payPane.classList.remove('hidden'); advPane.classList.add('hidden');
+    } else {
+      active(advTab); inactive(payTab);
+      advPane.classList.remove('hidden'); payPane.classList.add('hidden');
+      this.loadAdvances();
+    }
+  },
+
+  async loadAdvances() {
+    const pane = document.getElementById('emp-pane-advances');
+    pane.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await API.call('getEmployeeAdvanceHistory', { emp_id: State.empId });
+      const periods = r.data || [];
+      if (!periods.length) {
+        pane.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);padding:32px">
+          Advance details will appear here after your payslip is generated.
+        </div>`;
+        return;
+      }
+      pane.innerHTML = periods.map(period => {
+        const periodLabel = `${period.adv_start_date} to ${period.adv_end_date}`;
+        if (!period.advances.length) {
+          return `<div class="card" style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+              <div><div style="font-weight:700;font-size:15px">${period.month}</div>
+                <div style="color:var(--muted);font-size:12px">${periodLabel}</div></div>
+              <div style="font-weight:700;color:var(--success);font-size:14px">No advances</div>
+            </div>
+          </div>`;
+        }
+        return `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+          <div style="background:var(--surface2);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div><div style="font-weight:700;font-size:15px">${period.month}</div>
+              <div style="color:var(--muted);font-size:12px">${periodLabel}</div></div>
+            <div style="text-align:right">
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Deducted</div>
+              <div style="font-weight:800;font-size:18px;color:var(--warning)">${fmt(period.total)}</div>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:var(--surface);border-bottom:1px solid var(--border)">
+              <th style="padding:8px 14px;text-align:left;font-size:12px;color:var(--muted);font-weight:600">Date</th>
+              <th style="padding:8px 14px;text-align:right;font-size:12px;color:var(--muted);font-weight:600">Amount</th>
+            </tr></thead>
+            <tbody>${period.advances.map(a => `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 14px">${a.date}</td>
+              <td style="padding:10px 14px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+      }).join('');
+    } catch(e) { pane.innerHTML = `<div class="card" style="color:var(--danger)">${e.message}</div>`; }
   },
 
   async load(month) {
