@@ -577,6 +577,7 @@ Views.Payroll = {
         <input type="file" accept=".xlsx,.xls" style="display:none" onchange="Views.Payroll.onUpload(event)" />
       </label>
       <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.refreshAdvances()" title="Pull latest approved advances and recalculate">↻ Advances</button>
+      <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.recalculate()" title="Recalculate all rows using current employee salaries and attendance">↻ Recalculate</button>
       <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.saveDraft()">Save Draft</button>
       <button class="btn btn-primary btn-sm" onclick="Views.Payroll.finalize()">Finalise Month</button>
     </div>
@@ -1138,6 +1139,44 @@ Views.Payroll = {
       this.renderTable(State.payroll);
       toast(changed ? `Updated ${changed} record(s) with latest advances` : 'Advances already up to date', 'success');
     } catch(e) { toast(e.message, 'error'); }
+  },
+
+  recalculate() {
+    if (!State.payroll.length) { toast('No payroll loaded', 'error'); return; }
+    let count = 0;
+    State.payroll.forEach((p, i) => {
+      if (p.status === 'finalized') return;
+      const emp = State.employees.find(e => e.emp_id === p.emp_id);
+      if (!emp) return;
+      const days = State.attendanceMap[p.emp_id];
+      if (days && days.length) {
+        // Full recalculation using attendance data
+        const advances = State.advances.filter(a => a.emp_id === p.emp_id);
+        const newRec = Calc.run({ days, month: p.month }, emp, advances, State.holidays, State.settings);
+        newRec.payroll_id     = p.payroll_id;
+        newRec.status         = p.status;
+        newRec.finalized_date = p.finalized_date;
+        newRec.notes          = p.notes;
+        newRec.adv_start_date = p.adv_start_date;
+        newRec.adv_end_date   = p.adv_end_date;
+        State.payroll[i] = newRec;
+      } else {
+        // No attendance data — update salary-derived fields only
+        const effectiveWeekly = emp.weekly_salary - (emp.company_room === 'Yes' ? 200 : 0);
+        const daily  = effectiveWeekly / 6;
+        const hourly = daily / 9;
+        p.weekly_salary         = effectiveWeekly;
+        p.daily_rate            = Math.round(daily * 100) / 100;
+        p.hourly_rate           = Math.round(hourly * 100) / 100;
+        p.gross_pay             = Math.round(p.TD * daily);
+        p.ot_earnings           = Math.round((p.ot_weekday_min + p.ot_sunday_min + p.ot_holiday_min) / 60 * hourly);
+        p.shortfall_deduction   = Math.round(p.shortfall_min / 60 * hourly);
+        p.net_pay               = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - p.total_advances);
+      }
+      count++;
+    });
+    this.renderTable(State.payroll);
+    toast(`Recalculated ${count} employee(s) with current salaries`, 'success');
   },
 
   async saveDraft() {
