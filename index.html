@@ -1156,6 +1156,16 @@ Views.Payroll = {
       const advRes = await API.call('getAdvances', advFilter);
       State.advances = advRes.data || [];
 
+      // Recalculate advance totals in draft records from live approved advances
+      // (advances may have been approved after the initial calculation ran)
+      State.payroll.forEach(p => {
+        if (p.status === 'finalized') return;
+        const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+        const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
+        p.total_advances = advTotal;
+        p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
+      });
+
       this.renderTable(State.payroll);
       const isFinalized = State.payroll.some(p => p.status === 'finalized');
       const banner = document.getElementById('payroll-finalized-banner');
@@ -1239,13 +1249,36 @@ Views.Payroll = {
     </div>`;
   },
 
+  async _renderPDF(html, name, mode) {
+    // Mount to DOM so html2pdf can compute styles correctly (empty PDFs happen otherwise)
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:600px;background:#ffffff;color:#0f172a;z-index:-1';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    try {
+      const worker = html2pdf().set({
+        margin: 8, filename: name,
+        image: { type: 'jpeg', quality: .95 },
+        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).from(wrap);
+      if (mode === 'blob') return await worker.outputPdf('blob');
+      await worker.save();
+    } finally {
+      document.body.removeChild(wrap);
+    }
+  },
+
   async downloadPayslip(idx) {
     const p   = State.payroll[idx];
     const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
     const advances = State.advances.filter(a => a.emp_id === p.emp_id);
     const html = this._slipHTML(p, emp, advances);
     const name = `Payslip_${emp.name.replace(/\s+/g,'_')}_${p.month}.pdf`;
-    await html2pdf().set({ margin:8, filename:name, image:{type:'jpeg',quality:.95}, html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'} }).from(html).save();
+    try {
+      await this._renderPDF(html, name);
+      toast('Payslip downloaded', 'success');
+    } catch(e) { toast('PDF error: ' + e.message, 'error'); }
   },
 
   async sharePayslip(idx) {
@@ -1256,7 +1289,7 @@ Views.Payroll = {
     const html = this._slipHTML(p, emp, advances);
     const name = `Payslip_${emp.name.replace(/\s+/g,'_')}_${p.month}.pdf`;
     try {
-      const blob = await html2pdf().set({ margin:8, filename:name, image:{type:'jpeg',quality:.95}, html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'} }).from(html).outputPdf('blob');
+      const blob = await this._renderPDF(html, name, 'blob');
       const file = new File([blob], name, { type:'application/pdf' });
       await navigator.share({ files:[file], title:`Pay Slip – ${emp.name} (${p.month})` });
     } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
@@ -2373,6 +2406,7 @@ const EmployeeApp = {
         slip.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);padding:32px">No payroll data found for ${month}.</div>`;
         return;
       }
+      this._slip = { p, advances, month };
       const advTotal    = advances.reduce((s, a) => s + a.amount, 0);
       const grossTotal  = (p.gross_pay || 0) + (p.ot_earnings || 0);
       const deductions  = (p.shortfall_deduction || 0) + advTotal;
@@ -2436,6 +2470,11 @@ const EmployeeApp = {
             <span style="font-weight:700;font-size:15px">Net In-Hand</span>
             <span style="font-weight:800;font-size:20px">${fmt(net)}</span>
           </div>
+
+          <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-primary btn-sm" onclick="EmployeeApp.downloadPayslip()">↓ Download Payslip</button>
+            ${navigator.share ? `<button class="btn btn-secondary btn-sm" onclick="EmployeeApp.sharePayslip()">📤 Share</button>` : ''}
+          </div>
         </div>
 
         ${advances.length ? `
@@ -2467,6 +2506,78 @@ const EmployeeApp = {
     return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
       <span style="color:var(--muted)">${label}</span><span style="font-weight:500">${val ?? '—'}</span>
     </div>`;
+  },
+
+  async _renderPDF(html, name, mode) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:600px;background:#ffffff;color:#0f172a;z-index:-1';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    try {
+      const worker = html2pdf().set({
+        margin: 8, filename: name,
+        image: { type: 'jpeg', quality: .95 },
+        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).from(wrap);
+      if (mode === 'blob') return await worker.outputPdf('blob');
+      await worker.save();
+    } finally {
+      document.body.removeChild(wrap);
+    }
+  },
+
+  async downloadPayslip() {
+    if (!this._slip) { toast('No payslip loaded', 'error'); return; }
+    const { p, advances, month } = this._slip;
+    const sr = (l, v) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#64748b">${l}</span><span style="font-weight:500">${v}</span></div>`;
+    const advTotal   = advances.reduce((s, a) => s + Number(a.amount), 0);
+    const grossTotal = (p.gross_pay || 0) + (p.ot_earnings || 0);
+    const deductions = (p.shortfall_deduction || 0) + advTotal;
+    const net        = grossTotal - deductions;
+    const period     = p.adv_start_date && p.adv_end_date ? `${p.adv_start_date} → ${p.adv_end_date}` : '—';
+    const html = `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+        <div><div style="font-size:22px;font-weight:700">${State.empName}</div>
+          <div style="color:#64748b;font-size:13px">Pay Slip · ${month}</div></div>
+        <div style="text-align:right;font-size:13px"><div style="font-weight:700">Mahitha Prasad</div>
+          <div style="color:#64748b">Advance Period</div><div style="font-weight:600">${period}</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Attendance</div>
+          ${sr('Full Days', p.full_days)}${sr('Half Days', p.half_days)}${sr('Absent', p.absent_days)}${sr('Week Off', p.week_off_days)}</div>
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Overtime</div>
+          ${sr('Weekday OT', fmtHrs(p.ot_weekday_min))}${sr('Sunday OT', fmtHrs(p.ot_sunday_min))}${sr('Holiday OT', fmtHrs(p.ot_holiday_min))}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e2e8f0;padding-top:16px;margin-bottom:16px">
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Earnings</div>
+          ${sr('Gross Pay', fmt(p.gross_pay||0))}${sr('OT Earnings', fmt(p.ot_earnings||0))}
+          <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Earnings</span><span>${fmt(grossTotal)}</span></div></div>
+        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Deductions</div>
+          ${sr('Shortfall', fmt(p.shortfall_deduction||0))}${sr('Advances', fmt(advTotal))}
+          <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Deductions</span><span>${fmt(deductions)}</span></div></div>
+      </div>
+      <div style="background:#2563eb;color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;font-size:15px">Net In-Hand</span><span style="font-weight:800;font-size:22px">${fmt(net)}</span>
+      </div>
+      ${advances.length ? `<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:8px">Advance Details</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left">Date</th><th style="padding:8px 10px;text-align:right">Amount</th></tr></thead>
+          <tbody>${advances.map(a => `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px 10px">${a.date}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td></tr>`).join('')}
+          <tr style="background:#f1f5f9"><td style="padding:8px 10px;font-weight:700">Total Deducted</td><td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td></tr></tbody>
+        </table></div>` : ''}
+    </div>`;
+    const name = `Payslip_${State.empName.replace(/\s+/g,'_')}_${month}.pdf`;
+    try {
+      await this._renderPDF(html, name);
+      toast('Payslip downloaded', 'success');
+    } catch(e) { toast('PDF error: ' + e.message, 'error'); }
+  },
+
+  async sharePayslip() {
+    if (!navigator.share) { toast('Share not supported on this browser', 'error'); return; }
+    if (!this._slip) { toast('No payslip loaded', 'error'); return; }
+    await this.downloadPayslip(); // fallback: just download; share via WhatsApp manually
   }
 };
 

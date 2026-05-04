@@ -354,9 +354,12 @@ function saveAdvance(data) {
 function approveAdvance(advanceId) {
   const sheet = getSheet('Advances');
   const rows = sheet.getDataRange().getValues();
-  const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === advanceId; });
-  if (idx > 0) sheet.getRange(idx + 1, 6).setValue('Approved');
-  return { success: true };
+  const idx = rows.findIndex(function(r, i) { return i > 0 && String(r[0]) === String(advanceId); });
+  if (idx > 0) {
+    sheet.getRange(idx + 1, 6).setValue('Approved');
+    return { success: true };
+  }
+  return { success: false, error: 'Advance not found: ' + advanceId };
 }
 
 function deleteAdvance(advanceId) {
