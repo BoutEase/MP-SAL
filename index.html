@@ -2346,24 +2346,35 @@ const ManagerApp = {
   savePDF() {
     if (!this.dateAdvances.length) return;
     const { el, date } = this._buildPDFElement();
-    html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
+    el.style.cssText = 'position:fixed;left:-10000px;top:0;width:680px;background:#ffffff;color:#1e293b;z-index:-1';
+    document.body.appendChild(el);
+    html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, image: { type: 'jpeg', quality: .95 }, html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true }, jsPDF: { unit: 'mm', format: 'a4' } })
+      .from(el).save()
+      .finally(() => document.body.removeChild(el));
   },
 
   async sharePDF() {
     if (!this.dateAdvances.length) return;
     if (!navigator.share) { toast('Sharing not supported on this browser — use Save PDF instead', 'error'); return; }
     const { el, date } = this._buildPDFElement();
+    el.style.cssText = 'position:fixed;left:-10000px;top:0;width:680px;background:#ffffff;color:#1e293b;z-index:-1';
+    document.body.appendChild(el);
     try {
-      toast('Generating PDF…', 'success');
-      const blob = await html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).outputPdf('blob');
+      toast('Generating PDF…');
+      const blob = await html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, image: { type: 'jpeg', quality: .95 }, html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true }, jsPDF: { unit: 'mm', format: 'a4' } })
+        .from(el).outputPdf('blob');
+      document.body.removeChild(el);
       const file = new File([blob], `advances-${date}.pdf`, { type: 'application/pdf' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: `Advances ${date}` });
       } else {
         toast('File sharing not supported — saving instead', 'error');
-        html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4' } }).from(el).save();
+        this.savePDF();
       }
-    } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
+    } catch(e) {
+      if (document.body.contains(el)) document.body.removeChild(el);
+      if (e.name !== 'AbortError') toast(e.message, 'error');
+    }
   }
 };
 
