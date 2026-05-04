@@ -576,6 +576,7 @@ Views.Payroll = {
         Upload Petpooja Excel
         <input type="file" accept=".xlsx,.xls" style="display:none" onchange="Views.Payroll.onUpload(event)" />
       </label>
+      <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.refreshAdvances()" title="Pull latest approved advances and recalculate">↻ Advances</button>
       <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.saveDraft()">Save Draft</button>
       <button class="btn btn-primary btn-sm" onclick="Views.Payroll.finalize()">Finalise Month</button>
     </div>
@@ -1115,9 +1116,46 @@ Views.Payroll = {
     toast('Row updated', 'success');
   },
 
+  async refreshAdvances() {
+    if (!State.payroll.length) return;
+    if (!State.advStartDate || !State.advEndDate) { toast('Set the advance period first', 'error'); return; }
+    try {
+      const advRes = await API.call('getAdvances', {
+        status: 'Approved',
+        start_date: State.advStartDate,
+        end_date:   State.advEndDate
+      });
+      State.advances = advRes.data || [];
+      let changed = 0;
+      State.payroll.forEach(p => {
+        if (p.status === 'finalized') return;
+        const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+        const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
+        if (advTotal !== p.total_advances) changed++;
+        p.total_advances = advTotal;
+        p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
+      });
+      this.renderTable(State.payroll);
+      toast(changed ? `Updated ${changed} record(s) with latest advances` : 'Advances already up to date', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
   async saveDraft() {
     if (!State.payroll.length) { toast('Nothing to save', 'error'); return; }
     try {
+      // Pull latest approved advances before saving so totals are current
+      if (State.advStartDate && State.advEndDate) {
+        const advRes = await API.call('getAdvances', { status: 'Approved', start_date: State.advStartDate, end_date: State.advEndDate });
+        State.advances = advRes.data || [];
+        State.payroll.forEach(p => {
+          if (p.status === 'finalized') return;
+          const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+          const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
+          p.total_advances = advTotal;
+          p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
+        });
+        this.renderTable(State.payroll);
+      }
       const records = State.payroll.map(p => Object.assign({}, p, {
         adv_start_date: State.advStartDate,
         adv_end_date:   State.advEndDate
@@ -1184,6 +1222,16 @@ Views.Payroll = {
     if (!State.advEndDate) { toast('Set the advance deduction end date before finalising', 'error'); return; }
     if (!confirm(`Finalise payroll for ${month}?\nAdvance period: ${State.advStartDate||'start'} → ${State.advEndDate}\nThis cannot be undone.`)) return;
     try {
+      // Pull latest approved advances so we never finalise with stale totals
+      const advRes = await API.call('getAdvances', { status: 'Approved', start_date: State.advStartDate, end_date: State.advEndDate });
+      State.advances = advRes.data || [];
+      State.payroll.forEach(p => {
+        if (p.status === 'finalized') return;
+        const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+        const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
+        p.total_advances = advTotal;
+        p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
+      });
       const records = State.payroll.map(p => Object.assign({}, p, {
         adv_start_date: State.advStartDate,
         adv_end_date:   State.advEndDate
@@ -1738,9 +1786,13 @@ Views.Advances = {
     if (!ids.length) { toast('No pending advances found for this date', 'error'); return; }
     if (!confirm(`Approve all ${ids.length} advance(s) for ${date}?`)) return;
     try {
-      for (const id of ids) await API.call('approveAdvance', { advance_id: id });
+      const r = await API.call('approveAdvances', { advance_ids: ids });
       await this.fetch();
-      toast(`${ids.length} advance(s) approved`, 'success');
+      if (r.not_found && r.not_found.length) {
+        toast(`Approved ${r.approved}/${ids.length}. Not found: ${r.not_found.join(', ')}`, 'error');
+      } else {
+        toast(`${r.approved} advance(s) approved`, 'success');
+      }
     } catch(e) { toast(e.message, 'error'); }
   },
 

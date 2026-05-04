@@ -44,6 +44,7 @@ function doPost(e) {
       getAdvances:     () => getAdvances(data),
       saveAdvance:     () => saveAdvance(data),
       approveAdvance:  () => approveAdvance(data.advance_id),
+      approveAdvances: () => approveAdvances(data.advance_ids),
       deleteAdvance:   () => deleteAdvance(data.advance_id),
       getPayroll:      () => getPayroll(data && data.month),
       savePayroll:     () => savePayroll(data),
@@ -388,6 +389,24 @@ function approveAdvance(advanceId) {
     return { success: true };
   }
   return { success: false, error: 'Advance not found: ' + advanceId };
+}
+
+function approveAdvances(advanceIds) {
+  if (!Array.isArray(advanceIds)) advanceIds = [advanceIds];
+  const sheet = getSheet('Advances');
+  const rows = sheet.getDataRange().getValues();
+  const idSet = {};
+  advanceIds.forEach(function(id) { idSet[String(id)] = true; });
+  var approved = 0, notFound = [];
+  for (var i = 1; i < rows.length; i++) {
+    if (idSet[String(rows[i][0])]) {
+      sheet.getRange(i + 1, 6).setValue('Approved');
+      approved++;
+      delete idSet[String(rows[i][0])];
+    }
+  }
+  Object.keys(idSet).forEach(function(id) { notFound.push(id); });
+  return { success: true, approved: approved, not_found: notFound };
 }
 
 function deleteAdvance(advanceId) {
