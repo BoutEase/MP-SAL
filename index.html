@@ -394,7 +394,7 @@ const Parser = {
 // ============================================================
 const Calc = {
   run(empAttendance, dbEmployee, advancesForMonth, holidays, settings) {
-    const weekly  = dbEmployee.weekly_salary;
+    const weekly  = Number(dbEmployee.weekly_salary) - (dbEmployee.company_room === 'Yes' ? 200 : 0);
     const daily   = weekly / 6;
     const hourly  = daily / 9;
 
@@ -1022,7 +1022,7 @@ Views.Payroll = {
   // Live-preview a single row's OT/shortfall/amount as user edits it
   previewDayCalc(idx, di) {
     const emp    = State.employees.find(e => e.emp_id === State.payroll[idx]?.emp_id);
-    const daily  = (emp?.weekly_salary || 0) / 6;
+    const daily  = ((emp?.weekly_salary || 0) - (emp?.company_room === 'Yes' ? 200 : 0)) / 6;
     const hourly = daily / 9;
     const holidayDates = new Set((State.holidays||[]).map(h => h.date));
 
@@ -1104,7 +1104,7 @@ Views.Payroll = {
 
     const emp = State.employees.find(e => e.emp_id === p.emp_id);
     if (emp) {
-      const daily  = emp.weekly_salary / 6;
+      const daily  = (emp.weekly_salary - (emp.company_room === 'Yes' ? 200 : 0)) / 6;
       const hourly = daily / 9;
       p.TD              = p.full_days + p.half_days + p.holiday_absent_days;
       p.gross_pay       = Math.round(p.TD * daily);
@@ -1358,9 +1358,14 @@ Views.Employees = {
         ${getTeams().map(t => `<option>${t}</option>`).join('')}
       </select>
       <span style="flex:1"></span>
+      <label class="btn btn-secondary btn-sm" style="cursor:pointer" title="Upload Excel to bulk add/update employees">
+        ↑ Upload Excel
+        <input type="file" accept=".xlsx,.xls" style="display:none" onchange="Views.Employees.onExcelUpload(event)" />
+      </label>
       <button class="btn btn-primary btn-sm" onclick="Views.Employees.openForm()">+ Add Employee</button>
     </div>
     <div id="emp-form-wrap"></div>
+    <div id="emp-upload-preview" style="display:none"></div>
     <div id="emp-list"></div>`;
     this.render();
   },
@@ -1391,22 +1396,32 @@ Views.Employees = {
           <th style="padding:10px 8px;text-align:left">Name</th>
           <th style="padding:10px 8px">Team</th>
           <th style="padding:10px 8px">Petpooja ID</th>
+          <th style="padding:10px 8px;text-align:center">Room</th>
           <th style="padding:10px 8px;text-align:right">Weekly ₹</th>
           <th style="padding:10px 8px"></th>
         </tr>
       </thead>
-      <tbody>${list.map(e => `
+      <tbody>${list.map(e => {
+        const hasRoom = e.company_room === 'Yes';
+        const effective = e.weekly_salary - (hasRoom ? 200 : 0);
+        return `
         <tr style="border-bottom:1px solid var(--border)">
           <td style="padding:10px 8px;color:var(--muted)">${e.emp_id}</td>
           <td style="padding:10px 8px;font-weight:500">${e.name}<br><span style="font-size:11px;color:var(--muted)">${e.designation||''}</span></td>
           <td style="padding:10px 8px;text-align:center"><span class="badge badge-primary">${e.team||'—'}</span></td>
           <td style="padding:10px 8px;text-align:center">${e.petpooja_id||'—'}</td>
-          <td style="padding:10px 8px;text-align:right">${fmt(e.weekly_salary)}</td>
+          <td style="padding:10px 8px;text-align:center">${hasRoom
+            ? `<span class="badge badge-warning" title="Company room: −₹200/week">Room</span>`
+            : `<span style="color:var(--muted);font-size:12px">—</span>`}</td>
+          <td style="padding:10px 8px;text-align:right">
+            ${fmt(e.weekly_salary)}
+            ${hasRoom ? `<br><span style="font-size:11px;color:var(--warning)">Eff. ${fmt(effective)}</span>` : ''}
+          </td>
           <td style="padding:10px 8px;text-align:right;display:flex;gap:4px;justify-content:flex-end">
             <button class="btn btn-secondary btn-sm" onclick="Views.Employees.openForm('${e.emp_id}')">Edit</button>
             <button class="btn btn-danger btn-sm" onclick="Views.Employees.remove('${e.emp_id}')">✕</button>
           </td>
-        </tr>`).join('')}
+        </tr>`;}).join('')}
       </tbody></table></div>
       <p style="font-size:13px;color:var(--muted);margin-top:8px">${list.length} active employee(s)</p>`;
   },
@@ -1430,6 +1445,13 @@ Views.Employees = {
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${emp.petpooja_id||''}" /></div>
         <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${emp.petpooja_name||''}" /></div>
         <div class="field"><label>Weekly Salary (₹) *</label><input id="ef-salary" type="number" value="${emp.weekly_salary||''}" /></div>
+        <div class="field"><label>Company Room</label>
+          <select id="ef-room">
+            <option value="">No</option>
+            <option value="Yes" ${emp.company_room==='Yes'?'selected':''}>Yes (−₹200/week)</option>
+          </select>
+          ${emp.company_room==='Yes' ? `<div style="font-size:11px;color:var(--warning);margin-top:4px">Effective salary: ${fmt((emp.weekly_salary||0)-200)}/week</div>` : ''}
+        </div>
         <div class="field"><label>Login Code</label><input id="ef-logincode" value="${emp.login_code||''}" placeholder="e.g. emp001" /></div>
         <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${emp.joining_date||''}" /></div>
       </div>
@@ -1473,6 +1495,7 @@ Views.Employees = {
       petpooja_id:  document.getElementById('ef-pid')?.value.trim(),
       petpooja_name:document.getElementById('ef-pname')?.value.trim() || name,
       weekly_salary: salary,
+      company_room: document.getElementById('ef-room')?.value || '',
       login_code:   document.getElementById('ef-logincode')?.value.trim(),
       joining_date: document.getElementById('ef-join')?.value,
       status: 'Active'
@@ -1493,6 +1516,195 @@ Views.Employees = {
       const r = await API.call('getEmployees', {});
       State.employees = r.data || [];
       this.render(); toast('Employee deactivated', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  // ---- Excel bulk upload ----
+
+  onExcelUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';  // allow re-uploading same file
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = this._parseEmployeeExcel(new Uint8Array(ev.target.result));
+        if (!parsed.length) { toast('No employee rows found in file', 'error'); return; }
+        this._showUploadPreview(parsed);
+      } catch(err) {
+        toast('Parse error: ' + err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  },
+
+  _parseEmployeeExcel(fileData) {
+    const wb = XLSX.read(fileData, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (rows.length < 2) return [];
+
+    const headers = rows[0].map(h => String(h).toLowerCase().trim());
+    const col = (alts) => alts.reduce((found, a) => found >= 0 ? found : headers.findIndex(h => h === a), -1);
+
+    const colMap = {
+      name:         col(['name', 'employee name', 'emp name']),
+      team:         col(['team', 'department']),
+      designation:  col(['designation', 'role', 'position']),
+      petpooja_id:  col(['petpooja id', 'pp id', 'petpooja_id']),
+      petpooja_name:col(['petpooja name', 'pp name', 'petpooja_name']),
+      weekly_salary:col(['weekly salary', 'salary', 'weekly_salary']),
+      login_code:   col(['login code', 'login_code', 'code']),
+      company_room: col(['company room', 'company_room', 'room']),
+      status:       col(['status']),
+      joining_date: col(['joining date', 'joining_date', 'join date']),
+    };
+
+    const get = (row, c) => c >= 0 ? String(row[c] || '').trim() : '';
+
+    return rows.slice(1)
+      .filter(r => get(r, colMap.name))
+      .map(r => ({
+        name:          get(r, colMap.name),
+        team:          get(r, colMap.team),
+        designation:   get(r, colMap.designation),
+        petpooja_id:   get(r, colMap.petpooja_id),
+        petpooja_name: get(r, colMap.petpooja_name) || get(r, colMap.name),
+        weekly_salary: Number(get(r, colMap.weekly_salary)) || 0,
+        login_code:    get(r, colMap.login_code),
+        company_room:  get(r, colMap.company_room),
+        status:        get(r, colMap.status) || 'Active',
+        joining_date:  get(r, colMap.joining_date),
+      }));
+  },
+
+  _showUploadPreview(incoming) {
+    const norm = s => (s || '').toLowerCase().trim();
+    const existingByName = {};
+    State.employees.forEach(e => { existingByName[norm(e.name)] = e; });
+
+    const toAdd = [], toUpdate = [];
+
+    incoming.forEach(rec => {
+      const existing = existingByName[norm(rec.name)];
+      if (existing) {
+        // Build a diff of changed fields
+        const changes = [];
+        const fields = [
+          ['team', 'Team'],
+          ['designation', 'Designation'],
+          ['petpooja_id', 'Petpooja ID'],
+          ['petpooja_name', 'Petpooja Name'],
+          ['weekly_salary', 'Weekly ₹'],
+          ['login_code', 'Login Code'],
+          ['company_room', 'Company Room'],
+          ['status', 'Status'],
+        ];
+        fields.forEach(([k, label]) => {
+          const before = String(existing[k] || '');
+          const after  = String(rec[k] || '');
+          if (after && before !== after) changes.push({ label, before, after });
+        });
+        toUpdate.push({ rec: Object.assign({ emp_id: existing.emp_id }, rec), existing, changes });
+      } else {
+        toAdd.push({ rec });
+      }
+    });
+
+    this._pendingUpload = [...toAdd.map(x => x.rec), ...toUpdate.map(x => x.rec)];
+
+    const wrap = document.getElementById('emp-upload-preview');
+    if (!wrap) return;
+
+    const addRows = toAdd.map(({ rec }) => `
+      <tr style="background:var(--success-light)">
+        <td style="padding:8px 10px"><span class="badge badge-success">NEW</span></td>
+        <td style="padding:8px 10px;font-weight:500">${rec.name}</td>
+        <td style="padding:8px 10px">${rec.team || '—'}</td>
+        <td style="padding:8px 10px">${rec.designation || '—'}</td>
+        <td style="padding:8px 10px;text-align:right">${rec.weekly_salary ? fmt(rec.weekly_salary) : '—'}</td>
+        <td style="padding:8px 10px;text-align:center">${rec.company_room === 'Yes'
+          ? `<span class="badge badge-warning">Room −₹200</span>` : '—'}</td>
+        <td style="padding:8px 10px;color:var(--muted);font-size:12px">—</td>
+      </tr>`).join('');
+
+    const updateRows = toUpdate.map(({ rec, existing, changes }) => {
+      if (!changes.length) return `
+        <tr style="opacity:.6">
+          <td style="padding:8px 10px"><span class="badge" style="background:var(--border);color:var(--muted)">NO CHANGE</span></td>
+          <td style="padding:8px 10px;font-weight:500">${rec.name}</td>
+          <td colspan="5" style="padding:8px 10px;color:var(--muted);font-size:12px">All fields identical</td>
+        </tr>`;
+      return `
+        <tr style="background:var(--primary-light)">
+          <td style="padding:8px 10px"><span class="badge badge-primary">UPDATE</span></td>
+          <td style="padding:8px 10px;font-weight:500">${rec.name}</td>
+          <td style="padding:8px 10px">${rec.team || '—'}</td>
+          <td style="padding:8px 10px">${rec.designation || '—'}</td>
+          <td style="padding:8px 10px;text-align:right">${rec.weekly_salary ? fmt(rec.weekly_salary) : '—'}</td>
+          <td style="padding:8px 10px;text-align:center">${rec.company_room === 'Yes'
+            ? `<span class="badge badge-warning">Room −₹200</span>` : '—'}</td>
+          <td style="padding:8px 10px;font-size:12px;color:var(--primary)">
+            ${changes.map(c => `<div><strong>${c.label}:</strong> <span style="color:var(--muted)">${c.before||'(empty)'}</span> → <strong>${c.after}</strong></div>`).join('')}
+          </td>
+        </tr>`;
+    }).join('');
+
+    const total = toAdd.length + toUpdate.filter(x => x.changes.length).length;
+
+    wrap.style.display = 'block';
+    wrap.innerHTML = `
+    <div class="card" style="margin-bottom:16px;border-color:var(--primary)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <strong style="font-size:15px">Review Employee Upload</strong>
+        <span style="font-size:13px;color:var(--muted)">${toAdd.length} new &nbsp;·&nbsp; ${toUpdate.filter(x=>x.changes.length).length} updates &nbsp;·&nbsp; ${toUpdate.filter(x=>!x.changes.length).length} unchanged</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="Views.Employees.cancelUpload()">✕ Cancel</button>
+      </div>
+      <div style="overflow-x:auto;max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead style="position:sticky;top:0;background:var(--surface2)">
+            <tr>
+              <th style="padding:8px 10px;text-align:left">Action</th>
+              <th style="padding:8px 10px;text-align:left">Name</th>
+              <th style="padding:8px 10px;text-align:left">Team</th>
+              <th style="padding:8px 10px;text-align:left">Designation</th>
+              <th style="padding:8px 10px;text-align:right">Weekly ₹</th>
+              <th style="padding:8px 10px;text-align:center">Room</th>
+              <th style="padding:8px 10px;text-align:left">Changes</th>
+            </tr>
+          </thead>
+          <tbody>${addRows}${updateRows}</tbody>
+        </table>
+      </div>
+      ${total === 0 ? `<p style="color:var(--muted);font-size:13px;margin-top:12px">Nothing to apply — all records match existing data.</p>` : `
+      <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="Views.Employees.confirmUpload()">✓ Confirm &amp; Save ${total} record(s)</button>
+        <button class="btn btn-secondary btn-sm" onclick="Views.Employees.cancelUpload()">Cancel</button>
+      </div>`}
+    </div>`;
+
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
+
+  cancelUpload() {
+    this._pendingUpload = null;
+    const wrap = document.getElementById('emp-upload-preview');
+    if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+  },
+
+  async confirmUpload() {
+    if (!this._pendingUpload?.length) return;
+    const records = this._pendingUpload.filter((_, i) => true); // all records
+    try {
+      const wrap = document.getElementById('emp-upload-preview');
+      if (wrap) wrap.innerHTML = `<div style="padding:16px;color:var(--muted)">Saving…</div>`;
+      await API.call('saveEmployees', { records });
+      const r = await API.call('getEmployees', {});
+      State.employees = r.data || [];
+      this.cancelUpload();
+      this.render();
+      toast(`Saved ${records.length} employee record(s)`, 'success');
     } catch(e) { toast(e.message, 'error'); }
   }
 };

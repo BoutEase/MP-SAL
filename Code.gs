@@ -38,6 +38,7 @@ function doPost(e) {
       initSheets:      () => initSheets(),
       getEmployees:    () => getEmployees(),
       saveEmployee:    () => saveEmployee(data),
+      saveEmployees:   () => saveEmployees(data.records),
       deleteEmployee:  () => deleteEmployee(data.emp_id),
       getHolidays:     () => getHolidays(data && data.year),
       saveHolidays:    () => saveHolidays(data),
@@ -204,7 +205,7 @@ function initSheets() {
   }
 
   const defs = {
-    Employees: ['emp_id','name','team','designation','petpooja_id','petpooja_name','weekly_salary','login_code','status','joining_date'],
+    Employees: ['emp_id','name','team','designation','petpooja_id','petpooja_name','weekly_salary','login_code','status','joining_date','company_room'],
     Holidays:  ['date','name'],
     Payroll:   ['payroll_id','emp_id','month','full_days','half_days','absent_days','week_off_days','holiday_absent_days','ot_weekday_min','ot_sunday_min','ot_holiday_min','shortfall_min','weekly_salary','daily_rate','hourly_rate','TD','gross_pay','ot_earnings','shortfall_deduction','bonus_eligible','bonus_cut','total_advances','net_pay','status','finalized_date','notes','adv_start_date','adv_end_date'],
     Advances:  ['advance_id','emp_id','emp_name','date','amount','status','created_by','created_at'],
@@ -251,7 +252,7 @@ function getEmployees() {
         emp_id: r[0], name: r[1], team: r[2], designation: r[3],
         petpooja_id: String(r[4]), petpooja_name: r[5],
         weekly_salary: Number(r[6]), login_code: r[7],
-        status: r[8], joining_date: r[9]
+        status: r[8], joining_date: r[9], company_room: r[10] || ''
       };
     })
   };
@@ -272,7 +273,8 @@ function saveEmployee(data) {
     data.emp_id, data.name, data.team, data.designation,
     data.petpooja_id || '', data.petpooja_name || data.name,
     data.weekly_salary, data.login_code || '', data.status || 'Active',
-    data.joining_date || Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd')
+    data.joining_date || Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'),
+    data.company_room || ''
   ];
 
   const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.emp_id; });
@@ -282,6 +284,12 @@ function saveEmployee(data) {
     sheet.appendRow(row);
   }
   return { success: true, emp_id: data.emp_id };
+}
+
+function saveEmployees(records) {
+  if (!Array.isArray(records)) return { success: false, error: 'Expected array' };
+  var results = records.map(function(data) { return saveEmployee(data); });
+  return { success: true, saved: results.length };
 }
 
 function deleteEmployee(empId) {
