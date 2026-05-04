@@ -1529,7 +1529,13 @@ Views.Employees = {
     reader.onload = (ev) => {
       try {
         const parsed = this._parseEmployeeExcel(new Uint8Array(ev.target.result));
-        if (!parsed.length) { toast('No employee rows found in file', 'error'); return; }
+        if (!parsed.length) {
+          const hdrs = (this._lastDetectedHeaders || []).filter(h => h).join(', ');
+          toast('No rows found. Detected headers: ' + (hdrs || '(none)'), 'error');
+          console.log('Detected headers:', this._lastDetectedHeaders);
+          console.log('Column map:', this._lastColMap);
+          return;
+        }
         this._showUploadPreview(parsed);
       } catch(err) {
         toast('Parse error: ' + err.message, 'error');
@@ -1544,25 +1550,51 @@ Views.Employees = {
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
     if (rows.length < 2) return [];
 
-    const headers = rows[0].map(h => String(h).toLowerCase().trim());
-    const col = (alts) => alts.reduce((found, a) => found >= 0 ? found : headers.findIndex(h => h === a), -1);
+    // Auto-detect header row (first row containing a name-like header, within first 5 rows)
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(5, rows.length); i++) {
+      const cells = rows[i].map(h => String(h).toLowerCase().trim());
+      if (cells.some(h => h === 'name' || h === 'employee name' || h === 'emp name'
+                       || h === 'full name' || h === 'staff name' || h === 'employee'
+                       || h.includes('name'))) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    const headers = rows[headerRowIdx].map(h => String(h).toLowerCase().trim());
+
+    // Match by exact first, then substring
+    const col = (alts) => {
+      let idx = alts.reduce((f, a) => f >= 0 ? f : headers.findIndex(h => h === a), -1);
+      if (idx >= 0) return idx;
+      return headers.findIndex(h => alts.some(a => h.includes(a) || (a.length > 3 && a.includes(h))));
+    };
 
     const colMap = {
-      name:         col(['name', 'employee name', 'emp name']),
-      team:         col(['team', 'department']),
-      designation:  col(['designation', 'role', 'position']),
-      petpooja_id:  col(['petpooja id', 'pp id', 'petpooja_id']),
+      name:         col(['name', 'employee name', 'emp name', 'full name', 'staff name', 'employee']),
+      team:         col(['team', 'department', 'dept']),
+      designation:  col(['designation', 'role', 'position', 'desig']),
+      petpooja_id:  col(['petpooja id', 'pp id', 'petpooja_id', 'petpooja id']),
       petpooja_name:col(['petpooja name', 'pp name', 'petpooja_name']),
-      weekly_salary:col(['weekly salary', 'salary', 'weekly_salary']),
-      login_code:   col(['login code', 'login_code', 'code']),
+      weekly_salary:col(['weekly salary', 'salary', 'weekly_salary', 'wages', 'weekly wages', 'weekly pay']),
+      login_code:   col(['login code', 'login_code', 'login', 'code', 'emp code']),
       company_room: col(['company room', 'company_room', 'room']),
-      status:       col(['status']),
-      joining_date: col(['joining date', 'joining_date', 'join date']),
+      status:       col(['status', 'active']),
+      joining_date: col(['joining date', 'joining_date', 'join date', 'date of joining', 'doj', 'joining']),
     };
+
+    // Fallback: if name column still not found, use first non-empty column
+    if (colMap.name < 0) colMap.name = headers.findIndex(h => h !== '');
+
+    // Expose detected headers for debugging
+    this._lastDetectedHeaders = headers;
+    this._lastColMap = colMap;
 
     const get = (row, c) => c >= 0 ? String(row[c] || '').trim() : '';
 
-    return rows.slice(1)
+    const dataRows = rows.slice(headerRowIdx + 1);
+    return dataRows
       .filter(r => get(r, colMap.name))
       .map(r => ({
         name:          get(r, colMap.name),
