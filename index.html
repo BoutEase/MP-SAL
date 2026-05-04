@@ -1562,7 +1562,8 @@ Views.Employees = {
       }
     }
 
-    const headers = rows[headerRowIdx].map(h => String(h).toLowerCase().trim());
+    // Strip asterisks/special chars from headers for clean matching
+    const headers = rows[headerRowIdx].map(h => String(h).toLowerCase().replace(/[*]/g, '').trim());
 
     // Match by exact first, then substring
     const col = (alts) => {
@@ -1572,13 +1573,13 @@ Views.Employees = {
     };
 
     const colMap = {
-      name:         col(['name', 'employee name', 'emp name', 'full name', 'staff name', 'employee']),
-      team:         col(['team', 'department', 'dept']),
+      name:         col(['employee name', 'emp name', 'full name', 'staff name', 'name']),
+      team:         col(['department name', 'department', 'team', 'dept']),
       designation:  col(['designation', 'role', 'position', 'desig']),
-      petpooja_id:  col(['petpooja id', 'pp id', 'petpooja_id', 'petpooja id']),
+      petpooja_id:  col(['petpooja id', 'pp id', 'petpooja_id', 'employees code', 'emp code', 'code']),
       petpooja_name:col(['petpooja name', 'pp name', 'petpooja_name']),
       weekly_salary:col(['weekly salary', 'salary', 'weekly_salary', 'wages', 'weekly wages', 'weekly pay']),
-      login_code:   col(['login code', 'login_code', 'login', 'code', 'emp code']),
+      login_code:   col(['login code', 'login_code', 'login']),
       company_room: col(['company room', 'company_room', 'room']),
       status:       col(['status', 'active']),
       joining_date: col(['joining date', 'joining_date', 'join date', 'date of joining', 'doj', 'joining']),
@@ -1591,7 +1592,14 @@ Views.Employees = {
     this._lastDetectedHeaders = headers;
     this._lastColMap = colMap;
 
-    const get = (row, c) => c >= 0 ? String(row[c] || '').trim() : '';
+    // Handle error cells (#N/A etc.) — treat as empty string
+    const get = (row, c) => {
+      if (c < 0) return '';
+      const v = row[c];
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'object') return '';  // SheetJS error cell
+      return String(v).replace(/^#.*/, '').trim();  // strip #N/A, #REF! etc.
+    };
 
     const dataRows = rows.slice(headerRowIdx + 1);
     return dataRows
