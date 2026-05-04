@@ -344,7 +344,7 @@ function getAdvances(filter) {
   var rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; })
     .map(function(r) {
       return {
-        advance_id: r[0], emp_id: r[1], emp_name: r[2],
+        advance_id: r[0], emp_id: String(r[1] || '').trim(), emp_name: r[2],
         date: fmtDate(r[3]),
         amount: Number(r[4]),
         status: r[5] || 'Pending',
@@ -353,8 +353,8 @@ function getAdvances(filter) {
     });
 
   if (filter) {
-    if (filter.emp_id)   rows = rows.filter(function(a) { return a.emp_id === filter.emp_id; });
-    if (filter.status)   rows = rows.filter(function(a) { return a.status === filter.status; });
+    if (filter.emp_id)   rows = rows.filter(function(a) { return a.emp_id === String(filter.emp_id).trim(); });
+    if (filter.status)   rows = rows.filter(function(a) { return a.status.toLowerCase() === filter.status.toLowerCase(); });
     if (filter.start_date && filter.end_date) {
       rows = rows.filter(function(a) { return a.date >= filter.start_date && a.date <= filter.end_date; });
     }

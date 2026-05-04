@@ -655,20 +655,26 @@ Views.Payroll = {
           advFilter.start_date = State.advStartDate;
           advFilter.end_date   = State.advEndDate;
         }
-        const [holRes, advRes] = await Promise.all([
+        const pendingFilter = Object.assign({}, advFilter, { status: 'Pending' });
+        const [holRes, advRes, pendingRes] = await Promise.all([
           API.call('getHolidays', { year: State.currentMonth.substring(0,4) }),
-          API.call('getAdvances', advFilter)
+          API.call('getAdvances', advFilter),
+          API.call('getAdvances', pendingFilter)
         ]);
         State.holidays = holRes.data || [];
         State.advances = advRes.data || [];
+        State.pendingAdvances = pendingRes.data || [];
 
         // Match and calculate
         const matched = [], unmatched = [];
         for (const emp of parsed) {
           const dbEmp = Calc.matchEmployee(emp, State.employees);
           if (dbEmp) {
-            const advances = State.advances.filter(a => a.emp_id === dbEmp.emp_id);
+            const empId = String(dbEmp.emp_id).trim();
+            const advances = State.advances.filter(a => String(a.emp_id).trim() === empId);
+            const pending  = State.pendingAdvances.filter(a => String(a.emp_id).trim() === empId);
             const rec = Calc.run(emp, dbEmp, advances, State.holidays, State.settings);
+            rec._pendingAdvances = pending;  // carry through for warning display
             rec.month = State.currentMonth; // always use selected month, not Excel's From date
             matched.push(rec);
             State.attendanceMap[dbEmp.emp_id] = emp.days;
@@ -769,7 +775,10 @@ Views.Payroll = {
         <td style="padding:10px 8px;text-align:right">${fmt(p.gross_pay)}</td>
         <td style="padding:10px 8px;text-align:right;color:var(--success)">${p.ot_earnings > 0 ? '+'+fmt(p.ot_earnings) : '—'}</td>
         <td style="padding:10px 8px;text-align:right;color:var(--danger)">${p.shortfall_deduction > 0 ? '-'+fmt(p.shortfall_deduction) : '—'}</td>
-        <td style="padding:10px 8px;text-align:right;color:var(--warning)">${p.total_advances > 0 ? '-'+fmt(p.total_advances) : '—'}</td>
+        <td style="padding:10px 8px;text-align:right;color:var(--warning)">
+          ${p.total_advances > 0 ? '-'+fmt(p.total_advances) : '—'}
+          ${(p._pendingAdvances && p._pendingAdvances.length) ? `<br><span title="${p._pendingAdvances.length} advance(s) still PENDING — approve them first" style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;cursor:help">⚠ ${p._pendingAdvances.length} pending</span>` : ''}
+        </td>
         <td style="padding:10px 8px;text-align:right;color:var(--warning)">${p.bonus_cut > 0 ? '-'+fmt(p.bonus_cut) : '—'}</td>
         <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(p.net_pay)}</td>
         <td style="padding:10px 8px;text-align:center"><span class="badge badge-${p.status==='finalized'?'success':'warning'}">${p.status}</span></td>
@@ -1130,7 +1139,7 @@ Views.Payroll = {
       let changed = 0;
       State.payroll.forEach(p => {
         if (p.status === 'finalized') return;
-        const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+        const empAdv = State.advances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
         const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
         if (advTotal !== p.total_advances) changed++;
         p.total_advances = advTotal;
@@ -1188,7 +1197,7 @@ Views.Payroll = {
         State.advances = advRes.data || [];
         State.payroll.forEach(p => {
           if (p.status === 'finalized') return;
-          const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+          const empAdv = State.advances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
           const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
           p.total_advances = advTotal;
           p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
@@ -1237,7 +1246,7 @@ Views.Payroll = {
       // (advances may have been approved after the initial calculation ran)
       State.payroll.forEach(p => {
         if (p.status === 'finalized') return;
-        const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+        const empAdv = State.advances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
         const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
         p.total_advances = advTotal;
         p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
@@ -1266,7 +1275,7 @@ Views.Payroll = {
       State.advances = advRes.data || [];
       State.payroll.forEach(p => {
         if (p.status === 'finalized') return;
-        const empAdv = State.advances.filter(a => a.emp_id === p.emp_id);
+        const empAdv = State.advances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
         const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
         p.total_advances = advTotal;
         p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
