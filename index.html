@@ -2508,43 +2508,6 @@ Views.Payments = {
     } catch(e) { toast(e.message, 'error'); }
   },
 
-  // kept for backward compat but no longer shown in UI
-  async fetch() { if (this._month) this.onMonthChange(this._month); },
-  },
-
-  async fetch() {
-    try {
-      const [payRes, payrollRes] = await Promise.all([
-        API.call('getPayments', { month: State.currentMonth }),
-        API.call('getPayroll', { month: State.currentMonth })
-      ]);
-      State.payments = payRes.data || [];
-      this.renderSummary(payRes.data || [], payrollRes.data || []);
-      this.renderList(payRes.data || []);
-    } catch(e) { toast(e.message, 'error'); }
-  },
-
-  renderSummary(payments, payroll) {
-    const c = document.getElementById('pay-summary');
-    const totalNet = payroll.reduce((s,p)=>s+Number(p.net_pay),0);
-    const totalPaid = payments.reduce((s,p)=>s+Number(p.amount),0);
-    const balance = totalNet - totalPaid;
-    c.innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap">
-      <div class="card" style="flex:1;min-width:140px;text-align:center">
-        <div style="font-size:12px;color:var(--muted)">Total Payroll</div>
-        <div style="font-size:20px;font-weight:700">${fmt(totalNet)}</div>
-      </div>
-      <div class="card" style="flex:1;min-width:140px;text-align:center">
-        <div style="font-size:12px;color:var(--muted)">Total Paid</div>
-        <div style="font-size:20px;font-weight:700;color:var(--success)">${fmt(totalPaid)}</div>
-      </div>
-      <div class="card" style="flex:1;min-width:140px;text-align:center">
-        <div style="font-size:12px;color:var(--muted)">Remaining</div>
-        <div style="font-size:20px;font-weight:700;color:${balance>0?'var(--danger)':'var(--success)'}">${fmt(Math.abs(balance))}</div>
-      </div>
-    </div>`;
-  },
-
 };
 
 // ============================================================
