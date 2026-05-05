@@ -2314,19 +2314,202 @@ Views.Bonus = {
 // VIEWS — PAYMENTS
 // ============================================================
 Views.Payments = {
+  _run: [],
+  _month: '',
+
   async load() {
     const c = document.getElementById('view-payments');
-    c.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <h2 style="font-size:18px;font-weight:700">Payments</h2>
-      <input type="month" id="pay-month" value="${State.currentMonth}" style="width:auto;padding:6px 10px"
-        onchange="State.currentMonth=this.value;Views.Payments.fetch()" />
-      <span style="flex:1"></span>
-      <button class="btn btn-primary btn-sm" onclick="Views.Payments.openForm()">+ Record Payment</button>
-    </div>
-    <div id="pay-form-wrap"></div>
-    <div id="pay-summary" style="margin-bottom:16px"></div>
-    <div id="pay-list"></div>`;
-    await this.fetch();
+    c.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <h2 style="font-size:18px;font-weight:700">Payments</h2>
+        <select id="pay-month-sel" style="width:auto;padding:6px 10px" onchange="Views.Payments.onMonthChange(this.value)">
+          <option value="">— select month —</option>
+        </select>
+        <span style="flex:1"></span>
+      </div>
+      <div id="pay-run-wrap"></div>`;
+    try {
+      const r = await API.call('getFinalizedMonths', {});
+      const months = r.data || [];
+      const sel = document.getElementById('pay-month-sel');
+      months.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        sel.appendChild(opt);
+      });
+      if (months.length) { sel.value = months[0]; this.onMonthChange(months[0]); }
+      else document.getElementById('pay-run-wrap').innerHTML = '<p style="color:var(--muted)">No finalised months yet.</p>';
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  async onMonthChange(month) {
+    this._month = month;
+    State.currentMonth = month;
+    if (!month) return;
+    const wrap = document.getElementById('pay-run-wrap');
+    wrap.innerHTML = '<div class="spinner"></div>';
+    try {
+      const [runRes, payRes] = await Promise.all([
+        API.call('getPaymentRun', { month }),
+        API.call('getPayments', { month })
+      ]);
+      this._run = runRes.data || [];
+      this.render(this._run, payRes.data || []);
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  render(run, payments) {
+    const wrap = document.getElementById('pay-run-wrap');
+    const totalNet  = run.reduce((s, r) => s + r.net_pay, 0);
+    const totalPaid = run.reduce((s, r) => s + r.already_paid, 0);
+    const totalRem  = run.reduce((s, r) => s + Math.max(0, r.remaining), 0);
+    const today = new Date().toISOString().split('T')[0];
+
+    wrap.innerHTML = `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <div class="card" style="flex:1;min-width:130px;text-align:center;padding:12px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Payroll</div>
+          <div style="font-size:20px;font-weight:700">${fmt(totalNet)}</div>
+        </div>
+        <div class="card" style="flex:1;min-width:130px;text-align:center;padding:12px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Paid So Far</div>
+          <div style="font-size:20px;font-weight:700;color:var(--success)">${fmt(totalPaid)}</div>
+        </div>
+        <div class="card" style="flex:1;min-width:130px;text-align:center;padding:12px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Outstanding</div>
+          <div style="font-size:20px;font-weight:700;color:${totalRem > 0 ? 'var(--danger)' : 'var(--success)'}">${fmt(totalRem)}</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+        <div style="padding:12px 14px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <strong style="font-size:14px">Payment Run — ${this._month}</strong>
+          <label style="font-size:13px;color:var(--muted)">Date:
+            <input type="date" id="pay-date" value="${today}" style="margin-left:6px;padding:4px 8px;font-size:13px" />
+          </label>
+          <span style="flex:1"></span>
+          <label style="font-size:13px;cursor:pointer">
+            <input type="checkbox" id="pay-select-all" onchange="Views.Payments.toggleAll(this.checked)" />
+            Select all with balance
+          </label>
+          <button class="btn btn-primary btn-sm" onclick="Views.Payments.recordSelected()">✓ Record Selected</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead style="background:var(--surface)">
+              <tr>
+                <th style="padding:10px 8px;width:36px"></th>
+                <th style="padding:10px 8px;text-align:left">Employee</th>
+                <th style="padding:10px 8px;text-align:right">Net Pay</th>
+                <th style="padding:10px 8px;text-align:right">Already Paid</th>
+                <th style="padding:10px 8px;text-align:right">Remaining</th>
+                <th style="padding:10px 8px;text-align:right">Amount to Pay</th>
+                <th style="padding:10px 8px;text-align:center">Mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${run.map((r, i) => {
+                const rem = r.remaining;
+                const rowStyle = rem <= 0 ? 'opacity:.55' : '';
+                return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${i}">
+                  <td style="padding:10px 8px;text-align:center">
+                    <input type="checkbox" class="pay-chk" data-idx="${i}" ${rem <= 0 ? 'disabled' : ''} />
+                  </td>
+                  <td style="padding:10px 8px;font-weight:500">${r.emp_name}</td>
+                  <td style="padding:10px 8px;text-align:right">${fmt(r.net_pay)}</td>
+                  <td style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid > 0 ? fmt(r.already_paid) : '—'}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${rem > 0 ? 'var(--danger)' : 'var(--success)'}">
+                    ${rem > 0 ? fmt(rem) : '✓ Paid'}
+                  </td>
+                  <td style="padding:10px 8px;text-align:right">
+                    <input type="number" id="pay-amt-${i}" value="${rem > 0 ? rem : ''}" min="0"
+                      style="width:90px;padding:4px 6px;font-size:13px;text-align:right"
+                      ${rem <= 0 ? 'disabled' : ''} />
+                  </td>
+                  <td style="padding:10px 8px;text-align:center">
+                    <select id="pay-mode-${i}" style="padding:4px 6px;font-size:12px;width:auto" ${rem <= 0 ? 'disabled' : ''}>
+                      <option>UPI</option><option>Cash</option>
+                    </select>
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      ${payments.length ? `
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:12px 14px;background:var(--surface2);font-weight:600;font-size:14px">Payment History — ${this._month}</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead style="background:var(--surface)">
+              <tr>
+                <th style="padding:10px 8px;text-align:left">Date</th>
+                <th style="padding:10px 8px;text-align:left">Employee</th>
+                <th style="padding:10px 8px;text-align:right">Amount</th>
+                <th style="padding:10px 8px;text-align:center">Mode</th>
+                <th style="padding:10px 8px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${payments.sort((a, b) => a.date_paid > b.date_paid ? -1 : 1).map(p => `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:10px 8px">${p.date_paid}</td>
+                <td style="padding:10px 8px;font-weight:500">${p.emp_name}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:600">${fmt(p.amount)}</td>
+                <td style="padding:10px 8px;text-align:center"><span class="badge badge-primary">${p.mode}</span></td>
+                <td style="padding:10px 8px;text-align:center">
+                  <button class="btn btn-danger btn-sm" onclick="Views.Payments.remove('${p.payment_id}')">✕</button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>` : ''}`;
+  },
+
+  toggleAll(checked) {
+    document.querySelectorAll('.pay-chk:not([disabled])').forEach(cb => cb.checked = checked);
+  },
+
+  async recordSelected() {
+    const date = document.getElementById('pay-date')?.value;
+    if (!date) { toast('Select a payment date', 'error'); return; }
+    const checked = [...document.querySelectorAll('.pay-chk:checked')];
+    if (!checked.length) { toast('Select at least one employee', 'error'); return; }
+
+    const records = [];
+    for (const cb of checked) {
+      const i = parseInt(cb.dataset.idx);
+      const emp = this._run[i];
+      const amt = parseFloat(document.getElementById(`pay-amt-${i}`)?.value);
+      const mode = document.getElementById(`pay-mode-${i}`)?.value;
+      if (!amt || amt <= 0) { toast(`Enter a valid amount for ${emp.emp_name}`, 'error'); return; }
+      records.push({
+        emp_id: emp.emp_id, emp_name: emp.emp_name,
+        month: this._month, date_paid: date, amount: amt, mode: mode || 'UPI'
+      });
+    }
+
+    try {
+      await API.call('saveBulkPayments', { records });
+      toast(`${records.length} payment(s) recorded`, 'success');
+      this.onMonthChange(this._month);
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  async remove(paymentId) {
+    if (!confirm('Delete this payment?')) return;
+    try {
+      await API.call('deletePayment', { payment_id: paymentId });
+      this.onMonthChange(this._month);
+      toast('Deleted', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  // kept for backward compat but no longer shown in UI
+  async fetch() { if (this._month) this.onMonthChange(this._month); },
   },
 
   async fetch() {
@@ -2362,78 +2545,6 @@ Views.Payments = {
     </div>`;
   },
 
-  renderList(list) {
-    const c = document.getElementById('pay-list');
-    if (!list.length) { c.innerHTML = '<p style="color:var(--muted);margin-top:8px">No payments recorded yet.</p>'; return; }
-    c.innerHTML = `<div style="overflow-x:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead style="background:var(--surface2)">
-        <tr><th style="padding:10px 8px;text-align:left">Date</th><th style="padding:10px 8px;text-align:left">Employee</th>
-        <th style="padding:10px 8px;text-align:right">Amount</th><th style="padding:10px 8px">Mode</th>
-        <th style="padding:10px 8px">Notes</th><th></th></tr>
-      </thead>
-      <tbody>${list.sort((a,b)=>a.date_paid>b.date_paid?-1:1).map(p=>`
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:10px 8px">${p.date_paid}</td>
-          <td style="padding:10px 8px;font-weight:500">${p.emp_name}</td>
-          <td style="padding:10px 8px;text-align:right;font-weight:600">${fmt(p.amount)}</td>
-          <td style="padding:10px 8px;text-align:center"><span class="badge badge-primary">${p.mode}</span></td>
-          <td style="padding:10px 8px;color:var(--muted)">${p.notes||'—'}</td>
-          <td style="padding:10px 8px;display:flex;gap:4px">
-            <button class="btn btn-danger btn-sm" onclick="Views.Payments.remove('${p.payment_id}')">✕</button>
-          </td>
-        </tr>`).join('')}
-      </tbody></table></div>`;
-  },
-
-  openForm() {
-    const c = document.getElementById('pay-form-wrap');
-    c.innerHTML = `<div class="card" style="margin-bottom:16px">
-      <h3 style="font-size:15px;margin-bottom:14px">Record Payment</h3>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
-        <div class="field"><label>Employee *</label>
-          <select id="pf-emp">
-            <option value="">— select —</option>
-            ${State.employees.filter(e=>e.status==='Active').map(e=>
-              `<option value="${e.emp_id}">${e.name}</option>`).join('')}
-          </select></div>
-        <div class="field"><label>Date Paid *</label><input type="date" id="pf-date" value="${new Date().toISOString().split('T')[0]}" /></div>
-        <div class="field"><label>Amount (₹) *</label><input type="number" id="pf-amt" /></div>
-        <div class="field"><label>Mode</label>
-          <select id="pf-mode"><option>Cash</option><option>GPay</option></select></div>
-        <div class="field"><label>Notes</label><input id="pf-notes" /></div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-primary btn-sm" onclick="Views.Payments.save()">Save</button>
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('pay-form-wrap').innerHTML=''">Cancel</button>
-      </div>
-    </div>`;
-  },
-
-  async save() {
-    const empId = document.getElementById('pf-emp')?.value;
-    const amt   = parseFloat(document.getElementById('pf-amt')?.value);
-    if (!empId || !amt) { toast('Employee and amount required', 'error'); return; }
-    const emp = State.employees.find(e => e.emp_id === empId);
-    try {
-      await API.call('savePayment', {
-        emp_id: empId, emp_name: emp?.name || empId,
-        month: State.currentMonth,
-        date_paid: document.getElementById('pf-date')?.value,
-        amount: amt, mode: document.getElementById('pf-mode')?.value,
-        notes: document.getElementById('pf-notes')?.value
-      });
-      document.getElementById('pay-form-wrap').innerHTML = '';
-      await this.fetch(); toast('Payment recorded', 'success');
-    } catch(e) { toast(e.message, 'error'); }
-  },
-
-  async remove(paymentId) {
-    if (!confirm('Delete this payment?')) return;
-    try {
-      await API.call('deletePayment', { payment_id: paymentId });
-      await this.fetch(); toast('Deleted', 'success');
-    } catch(e) { toast(e.message, 'error'); }
-  }
 };
 
 // ============================================================

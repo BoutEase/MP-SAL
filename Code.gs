@@ -56,6 +56,9 @@ function doPost(e) {
       deletePayment:   () => deletePayment(data.payment_id),
       getBonusPool:         () => getBonusPool(),
       saveBonusBalances:    () => saveBonusBalances(data),
+      getFinalizedMonths:   () => getFinalizedMonths(),
+      getPaymentRun:        () => getPaymentRun(data.month),
+      saveBulkPayments:     () => saveBulkPayments(data.records),
       getSettings:          () => getSettings(),
       saveSettings:         () => saveSettings(data),
       getEmployeePayslip:   () => getEmployeePayslip(data),
@@ -658,6 +661,61 @@ function deletePayment(paymentId) {
   const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === paymentId; });
   if (idx > 0) sheet.deleteRow(idx + 1);
   return { success: true };
+}
+
+function getFinalizedMonths() {
+  var rows = getSheet('Payroll').getDataRange().getValues().slice(1).filter(function(r) { return r[0] && r[23] === 'finalized'; });
+  var months = {};
+  rows.forEach(function(r) {
+    var m = r[2] instanceof Date ? Utilities.formatDate(r[2], 'Asia/Kolkata', 'yyyy-MM') : String(r[2]).substring(0, 7);
+    months[m] = true;
+  });
+  return { success: true, data: Object.keys(months).sort().reverse() };
+}
+
+function getPaymentRun(month) {
+  var payroll = getPayroll(month).data.filter(function(p) { return p.status === 'finalized'; });
+  var payments = getPayments(month).data;
+  var empSheet = getSheet('Employees');
+  var empRows = empSheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
+  var empMap = {};
+  empRows.forEach(function(r) { empMap[r[0]] = r[1]; });
+
+  var paidMap = {};
+  payments.forEach(function(p) {
+    paidMap[p.emp_id] = (paidMap[p.emp_id] || 0) + p.amount;
+  });
+
+  var run = payroll.map(function(p) {
+    var paid = paidMap[p.emp_id] || 0;
+    return {
+      emp_id: p.emp_id,
+      emp_name: empMap[p.emp_id] || p.emp_id,
+      net_pay: Number(p.net_pay) || 0,
+      already_paid: paid,
+      remaining: (Number(p.net_pay) || 0) - paid
+    };
+  }).sort(function(a, b) { return a.emp_name > b.emp_name ? 1 : -1; });
+
+  return { success: true, data: run };
+}
+
+function saveBulkPayments(records) {
+  if (!Array.isArray(records) || !records.length) return { success: false, error: 'No records' };
+  var sheet = getSheet('Payments');
+  var rows = sheet.getDataRange().getValues();
+  var nums = rows.slice(1).filter(function(r) { return r[0]; })
+    .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
+  var next = Math.max.apply(null, [0].concat(nums));
+  records.forEach(function(rec) {
+    next++;
+    sheet.appendRow([
+      'PMT' + String(next).padStart(5, '0'),
+      rec.emp_id, rec.emp_name, rec.month,
+      rec.date_paid, rec.amount, rec.mode, rec.notes || ''
+    ]);
+  });
+  return { success: true, saved: records.length };
 }
 
 // ---- Bonus Pool ----
