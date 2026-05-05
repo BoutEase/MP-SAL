@@ -264,10 +264,15 @@ function saveEmployee(data) {
   const rows = sheet.getDataRange().getValues();
 
   if (!data.emp_id) {
-    const nums = rows.slice(1).filter(function(r) { return r[0]; })
-      .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
-    const next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(3, '0');
-    data.emp_id = 'MP' + next;
+    if (data.petpooja_id && parseInt(data.petpooja_id)) {
+      // Derive emp_id from Petpooja ID so it stays consistent with advance records
+      data.emp_id = 'MP' + String(parseInt(data.petpooja_id)).padStart(3, '0');
+    } else {
+      const nums = rows.slice(1).filter(function(r) { return r[0]; })
+        .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
+      const next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(3, '0');
+      data.emp_id = 'MP' + next;
+    }
   }
 
   const row = [
@@ -278,11 +283,22 @@ function saveEmployee(data) {
     data.company_room || ''
   ];
 
-  const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.emp_id; });
+  // First try exact emp_id match
+  var idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.emp_id; });
+
   if (idx > 0) {
     sheet.getRange(idx + 1, 1, 1, row.length).setValues([row]);
   } else {
-    sheet.appendRow(row);
+    // Fall back to name match — handles migration where old emp_id was auto-sequential
+    var normName = String(data.name || '').toLowerCase().trim();
+    var nameIdx  = rows.findIndex(function(r, i) {
+      return i > 0 && r[0] && String(r[1] || '').toLowerCase().trim() === normName;
+    });
+    if (nameIdx > 0) {
+      sheet.getRange(nameIdx + 1, 1, 1, row.length).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
   }
   return { success: true, emp_id: data.emp_id };
 }

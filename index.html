@@ -1700,29 +1700,42 @@ Views.Employees = {
     const dataRows = rows.slice(headerRowIdx + 1);
     return dataRows
       .filter(r => get(r, colMap.name))
-      .map(r => ({
-        name:          get(r, colMap.name),
-        team:          get(r, colMap.team),
-        designation:   get(r, colMap.designation),
-        petpooja_id:   get(r, colMap.petpooja_id),
-        petpooja_name: get(r, colMap.petpooja_name) || get(r, colMap.name),
-        weekly_salary: Number(get(r, colMap.weekly_salary)) || 0,
-        login_code:    get(r, colMap.login_code),
-        company_room:  get(r, colMap.company_room),
-        status:        get(r, colMap.status) || 'Active',
-        joining_date:  get(r, colMap.joining_date),
-      }));
+      .map(r => {
+        const petpoojaId = get(r, colMap.petpooja_id);
+        const empId = petpoojaId && parseInt(petpoojaId)
+          ? 'MP' + String(parseInt(petpoojaId)).padStart(3, '0')
+          : null;
+        return {
+          emp_id:        empId,
+          name:          get(r, colMap.name),
+          team:          get(r, colMap.team),
+          designation:   get(r, colMap.designation),
+          petpooja_id:   petpoojaId,
+          petpooja_name: get(r, colMap.petpooja_name) || get(r, colMap.name),
+          weekly_salary: Number(get(r, colMap.weekly_salary)) || 0,
+          login_code:    get(r, colMap.login_code),
+          company_room:  get(r, colMap.company_room),
+          status:        get(r, colMap.status) || 'Active',
+          joining_date:  get(r, colMap.joining_date),
+        };
+      });
   },
 
   _showUploadPreview(incoming) {
     const norm = s => (s || '').toLowerCase().trim();
     const existingByName = {};
-    State.employees.forEach(e => { existingByName[norm(e.name)] = e; });
+    const existingById   = {};
+    State.employees.forEach(e => {
+      existingByName[norm(e.name)] = e;
+      existingById[e.emp_id] = e;
+    });
 
     const toAdd = [], toUpdate = [];
 
     incoming.forEach(rec => {
-      const existing = existingByName[norm(rec.name)];
+      // Match by new petpooja-derived emp_id first, then by name
+      const existing = (rec.emp_id ? existingById[rec.emp_id] : null)
+                    || existingByName[norm(rec.name)];
       if (existing) {
         // Build a diff of changed fields
         const changes = [];
