@@ -55,6 +55,7 @@ function doPost(e) {
       savePayment:     () => savePayment(data),
       deletePayment:   () => deletePayment(data.payment_id),
       getBonusPool:         () => getBonusPool(),
+      saveBonusBalances:    () => saveBonusBalances(data),
       getSettings:          () => getSettings(),
       saveSettings:         () => saveSettings(data),
       getEmployeePayslip:   () => getEmployeePayslip(data),
@@ -109,7 +110,21 @@ function getEmployeePayslip(data) {
       end_date: pay.adv_end_date
     }).data;
   }
-  return { success: true, data: { payroll: pay, advances: advances } };
+
+  // Get latest bonus balance from Bonus sheet
+  var bonusBalance = 0;
+  try {
+    var bonusSheet = getSheet('Bonus');
+    var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
+      .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
+    if (bonusRows.length) {
+      // Take the row with the latest month
+      bonusRows.sort(function(a, b) { return String(a[2]) > String(b[2]) ? 1 : -1; });
+      bonusBalance = Number(bonusRows[bonusRows.length - 1][6]) || 0;
+    }
+  } catch(e) {}
+
+  return { success: true, data: { payroll: pay, advances: advances, bonus_balance: bonusBalance } };
 }
 
 function getEmployeeAdvanceHistory(data) {
@@ -672,4 +687,39 @@ function getBonusPool() {
   });
 
   return { success: true, data: data };
+}
+
+// Upload initial bonus balances from Excel (emp_name + balance columns)
+function saveBonusBalances(data) {
+  var records = data.records || [];
+  if (!records.length) return { success: false, error: 'No records provided' };
+
+  var empSheet = getSheet('Employees');
+  var empRows = empSheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
+  var norm = function(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+  var empByName = {};
+  empRows.forEach(function(r) {
+    empByName[norm(r[1])] = r[0]; // name -> emp_id
+    empByName[norm(r[5])] = r[0]; // petpooja_name -> emp_id
+  });
+
+  var bonusSheet = getSheet('Bonus');
+  var bonusRows = bonusSheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
+  var bonusNums = bonusRows.map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
+  var nextNum = Math.max.apply(null, [0].concat(bonusNums));
+
+  var saved = 0, skipped = 0;
+  records.forEach(function(rec) {
+    var empId = rec.emp_id || empByName[norm(rec.emp_name)] || null;
+    if (!empId) { skipped++; return; }
+    var balance = Number(rec.balance) || 0;
+    nextNum++;
+    bonusSheet.appendRow([
+      'BON' + String(nextNum).padStart(5, '0'),
+      empId, 'initial', 'Y', 0, 0, balance, 'uploaded'
+    ]);
+    saved++;
+  });
+
+  return { success: true, saved: saved, skipped: skipped };
 }
