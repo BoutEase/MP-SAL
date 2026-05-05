@@ -410,6 +410,7 @@ const Calc = {
 
     let fullDays = 0, halfDays = 0, absentDays = 0, weekOffDays = 0, holidayAbsent = 0;
     let otWeekdayMin = 0, otSundayMin = 0, otHolidayMin = 0, shortfallMin = 0;
+    let borderlineDays = 0;
 
     for (const day of empAttendance.days) {
       const isSunday  = day.dayName === 'Sunday';
@@ -429,7 +430,11 @@ const Calc = {
           otHolidayMin += Math.floor(rawMin / otRound) * otRound;
         } else if (day.status === 'HD') {
           halfDays++;
-          shortfallMin += Math.round((9 - day.totalHours) * 60);
+          if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
+            shortfallMin += Math.round((9 - day.totalHours) * 60);
+          } else if (day.totalHours >= shortfallThresh && day.totalHours < 9) {
+            borderlineDays++;
+          }
           const rawMin = (day.totalHours - (addLunch ? 0 : lunchHrs)) * 60;
           otHolidayMin += Math.floor(rawMin / otRound) * otRound;
         } else {
@@ -444,10 +449,16 @@ const Calc = {
           otWeekdayMin += rounded;
         } else if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
           shortfallMin += Math.round((9 - day.totalHours) * 60);
+        } else if (day.totalHours >= shortfallThresh && day.totalHours < 9) {
+          borderlineDays++;
         }
       } else if (day.status === 'HD') {
         halfDays++;
-        shortfallMin += Math.round((9 - day.totalHours) * 60);
+        if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
+          shortfallMin += Math.round((9 - day.totalHours) * 60);
+        } else if (day.totalHours >= shortfallThresh && day.totalHours < 9) {
+          borderlineDays++;
+        }
       } else if (day.status === 'Absent') {
         absentDays++;
       }
@@ -478,6 +489,7 @@ const Calc = {
       shortfall_deduction: Math.round(shortfall),
       bonus_eligible: bonusEligible, bonus_cut: bonusCut,
       total_advances: totalAdv, net_pay: Math.round(net),
+      borderline_days: borderlineDays,
       status: 'draft'
     };
   },
@@ -605,6 +617,7 @@ Views.Payroll = {
       </div>
     </div>
     <div id="payroll-unmatched"></div>
+    <div id="payroll-banner-wrap"></div>
     <div id="payroll-table-wrap"><p style="color:var(--muted);font-size:14px">Upload a Petpooja Excel to calculate payroll, or load saved draft below.</p></div>
     <div style="margin-top:12px"><button class="btn btn-secondary btn-sm" onclick="Views.Payroll.loadDraft()">Load Saved Draft</button></div>`;
     this.prefillAdvStartDate();
@@ -763,6 +776,29 @@ Views.Payroll = {
 
     const empMap = {};
     State.employees.forEach(e => empMap[e.emp_id] = e);
+
+    // Borderline warning banner: employees working 8h30m–9h more than 3 times
+    const bannerWrap = document.getElementById('payroll-banner-wrap');
+    if (bannerWrap) {
+      const borderlineAlerts = payroll
+        .filter(p => (p.borderline_days || 0) > 3)
+        .map(p => {
+          const emp = empMap[p.emp_id] || { name: p.emp_id };
+          return `${emp.name} (${p.borderline_days} days)`;
+        });
+      bannerWrap.innerHTML = borderlineAlerts.length ? `
+        <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px">
+          <span style="font-size:16px">⚠️</span>
+          <div style="flex:1">
+            <strong style="color:#92400e">Borderline Attendance Alert</strong>
+            <p style="margin:4px 0 0;color:#78350f;font-size:13px">
+              The following employee(s) worked between 8h 30m and 9h more than 3 times this month — no deduction was applied but attendance should be reviewed:<br>
+              <strong>${borderlineAlerts.join(', ')}</strong>
+            </p>
+          </div>
+          <button onclick="this.closest('div[style]').remove()" style="background:none;border:none;cursor:pointer;color:#92400e;font-size:16px;line-height:1;padding:0">✕</button>
+        </div>` : '';
+    }
 
     const rows = payroll.map((p, idx) => {
       const emp = empMap[p.emp_id] || { name: p.emp_id, team: '' };
