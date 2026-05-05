@@ -45,6 +45,7 @@ function doPost(e) {
       getAdvances:     () => getAdvances(data),
       saveAdvance:     () => saveAdvance(data),
       approveAdvance:  () => approveAdvance(data.advance_id),
+      fixAdvanceEmpId: () => fixAdvanceEmpId(data),
       approveAdvances: () => approveAdvances(data.advance_ids),
       deleteAdvance:   () => deleteAdvance(data.advance_id),
       getPayroll:      () => getPayroll(data && data.month),
@@ -354,6 +355,7 @@ function getAdvances(filter) {
 
   if (filter) {
     if (filter.emp_id)   rows = rows.filter(function(a) { return a.emp_id === String(filter.emp_id).trim(); });
+    if (filter.emp_name) rows = rows.filter(function(a) { return a.emp_name.toLowerCase().includes(String(filter.emp_name).toLowerCase()); });
     if (filter.status)   rows = rows.filter(function(a) { return a.status.toLowerCase() === filter.status.toLowerCase(); });
     if (filter.start_date && filter.end_date) {
       rows = rows.filter(function(a) { return a.date >= filter.start_date && a.date <= filter.end_date; });
@@ -415,6 +417,26 @@ function approveAdvances(advanceIds) {
   }
   Object.keys(idSet).forEach(function(id) { notFound.push(id); });
   return { success: true, approved: approved, not_found: notFound };
+}
+
+function fixAdvanceEmpId(data) {
+  // Re-links a list of advances to a new emp_id (corrects mismatched records)
+  var advanceIds = data.advance_ids;
+  var newEmpId   = String(data.emp_id).trim();
+  var newEmpName = data.emp_name || '';
+  if (!Array.isArray(advanceIds) || !newEmpId) return { success: false, error: 'advance_ids and emp_id required' };
+  const sheet = getSheet('Advances');
+  const rows  = sheet.getDataRange().getValues();
+  const idSet = {};
+  advanceIds.forEach(function(id) { idSet[String(id)] = true; });
+  var fixed = 0;
+  for (var i = 1; i < rows.length; i++) {
+    if (idSet[String(rows[i][0])]) {
+      sheet.getRange(i + 1, 2, 1, 2).setValues([[newEmpId, newEmpName]]);
+      fixed++;
+    }
+  }
+  return { success: true, fixed: fixed };
 }
 
 function deleteAdvance(advanceId) {

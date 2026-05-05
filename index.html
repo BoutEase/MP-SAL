@@ -1191,36 +1191,57 @@ Views.Payroll = {
 
   async debugAdvances(empId) {
     try {
-      const r = await API.call('getAdvances', { emp_id: empId });
-      const all = r.data || [];
-      const emp = State.employees.find(e => e.emp_id === empId);
+      const emp  = State.employees.find(e => e.emp_id === empId);
       const name = emp ? emp.name : empId;
 
-      // Build modal content
-      const rows = all.length ? all.map(a => `
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:7px 10px">${a.advance_id}</td>
+      // Fetch by emp_id AND by name (to catch mismatched records)
+      const [byId, byName] = await Promise.all([
+        API.call('getAdvances', { emp_id: empId }),
+        emp ? API.call('getAdvances', { emp_name: emp.name }) : Promise.resolve({ data: [] })
+      ]);
+
+      const byIdData   = byId.data   || [];
+      const byNameData = (byName.data || []).filter(a => String(a.emp_id).trim() !== String(empId).trim());
+
+      const buildRows = (list, mismatch) => list.length ? list.map(a => `
+        <tr style="border-bottom:1px solid var(--border);${mismatch ? 'background:var(--danger-light)' : ''}">
+          <td style="padding:7px 10px;font-size:12px;color:var(--muted)">${a.advance_id}</td>
           <td style="padding:7px 10px">${a.date}</td>
           <td style="padding:7px 10px;text-align:right">₹${a.amount}</td>
-          <td style="padding:7px 10px">
-            <span class="badge badge-${a.status==='Approved'?'success':'warning'}">${a.status}</span>
-          </td>
-        </tr>`).join('') :
-        `<tr><td colspan="4" style="padding:16px;color:var(--muted);text-align:center">No advances found in the system for this employee</td></tr>`;
+          <td style="padding:7px 10px"><span class="badge badge-${a.status==='Approved'?'success':'warning'}">${a.status}</span></td>
+          <td style="padding:7px 10px;font-size:12px;color:var(--danger)">${mismatch ? `stored as <strong>${a.emp_id}</strong>` : ''}</td>
+        </tr>`).join('') : '';
+
+      const mismatchSection = byNameData.length ? `
+        <div style="margin-top:16px;padding:12px;background:var(--danger-light);border-radius:8px;border:1px solid var(--danger)">
+          <div style="font-weight:600;color:var(--danger);margin-bottom:8px">
+            ⚠ ${byNameData.length} advance(s) found under a different emp_id — this is the mismatch
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tbody>${buildRows(byNameData, true)}</tbody>
+          </table>
+          <button id="fix-btn" class="btn btn-danger btn-sm" style="margin-top:10px">
+            Fix: re-link ${byNameData.length} advance(s) to ${empId}
+          </button>
+        </div>` : '';
+
+      const noResults = !byIdData.length && !byNameData.length
+        ? `<tr><td colspan="5" style="padding:16px;color:var(--muted);text-align:center">No advances found anywhere for "${name}" — check the Advances tab to confirm they were saved.</td></tr>` : '';
 
       const modal = document.createElement('div');
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px';
       modal.innerHTML = `
-        <div style="background:var(--surface);border-radius:12px;padding:24px;max-width:560px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-md)">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-            <strong style="font-size:15px">All advances for ${name}</strong>
-            <span style="font-size:12px;color:var(--muted)">(emp_id: ${empId})</span>
+        <div style="background:var(--surface);border-radius:12px;padding:24px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-md)">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <strong style="font-size:15px">Advance check — ${name}</strong>
+            <span style="font-size:12px;color:var(--muted)">(${empId})</span>
             <span style="flex:1"></span>
             <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted)">✕</button>
           </div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
-            Current advance period: <strong>${State.advStartDate||'(not set)'}</strong> → <strong>${State.advEndDate||'(not set)'}</strong>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+            Advance period: <strong>${State.advStartDate||'(not set)'}</strong> → <strong>${State.advEndDate||'(not set)'}</strong>
           </div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--muted)">Advances linked to ${empId}:</div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead style="background:var(--surface2)">
               <tr>
@@ -1228,16 +1249,30 @@ Views.Payroll = {
                 <th style="padding:7px 10px;text-align:left">Date</th>
                 <th style="padding:7px 10px;text-align:right">Amount</th>
                 <th style="padding:7px 10px;text-align:left">Status</th>
+                <th></th>
               </tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody>${buildRows(byIdData, false)}${noResults}</tbody>
           </table>
-          ${all.length ? `<p style="font-size:12px;color:var(--muted);margin-top:12px">
-            Advances counted in payroll must be <strong>Approved</strong> and within the advance period above.
-          </p>` : ''}
+          ${mismatchSection}
+          ${byIdData.length ? `<p style="font-size:12px;color:var(--muted);margin-top:10px">Advances must be <strong>Approved</strong> and within the period above to be deducted.</p>` : ''}
         </div>`;
       document.body.appendChild(modal);
       modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+      // Fix button handler
+      const fixBtn = modal.querySelector('#fix-btn');
+      if (fixBtn) {
+        fixBtn.addEventListener('click', async () => {
+          fixBtn.disabled = true; fixBtn.textContent = 'Fixing…';
+          try {
+            const ids = byNameData.map(a => a.advance_id);
+            await API.call('fixAdvanceEmpId', { advance_ids: ids, emp_id: empId, emp_name: name });
+            modal.remove();
+            toast(`Fixed ${ids.length} advance(s) — now linked to ${empId}. Re-upload Petpooja Excel to recalculate.`, 'success');
+          } catch(err) { fixBtn.disabled = false; fixBtn.textContent = 'Retry'; toast(err.message, 'error'); }
+        });
+      }
     } catch(e) { toast(e.message, 'error'); }
   },
 
