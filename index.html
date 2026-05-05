@@ -1441,24 +1441,15 @@ Views.Payroll = {
     </div>`;
   },
 
-  async _renderPDF(html, name, mode) {
-    // Mount to DOM so html2pdf can compute styles correctly (empty PDFs happen otherwise)
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:absolute;top:-99999px;left:0;width:600px;background:#ffffff;color:#0f172a';
-    wrap.innerHTML = html;
-    document.body.appendChild(wrap);
-    try {
-      const worker = html2pdf().set({
-        margin: 8, filename: name,
-        image: { type: 'jpeg', quality: .95 },
-        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(wrap);
-      if (mode === 'blob') return await worker.outputPdf('blob');
-      await worker.save();
-    } finally {
-      document.body.removeChild(wrap);
-    }
+  _printHTML(html, title) {
+    const win = window.open('', '_blank');
+    if (!win) { toast('Allow pop-ups to print/save PDF', 'error'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+      <style>*{box-sizing:border-box}body{margin:0;font-family:sans-serif;background:#fff;color:#0f172a}
+      @media print{body{margin:0}@page{margin:10mm}}</style></head><body>${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
   },
 
   async downloadPayslip(idx) {
@@ -1466,25 +1457,12 @@ Views.Payroll = {
     const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
     const advances = State.advances.filter(a => a.emp_id === p.emp_id);
     const html = this._slipHTML(p, emp, advances);
-    const name = `Payslip_${emp.name.replace(/\s+/g,'_')}_${p.month}.pdf`;
-    try {
-      await this._renderPDF(html, name);
-      toast('Payslip downloaded', 'success');
-    } catch(e) { toast('PDF error: ' + e.message, 'error'); }
+    this._printHTML(html, `Payslip – ${emp.name} (${p.month})`);
   },
 
   async sharePayslip(idx) {
-    if (!navigator.share) { toast('Share not supported on this browser', 'error'); return; }
-    const p   = State.payroll[idx];
-    const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
-    const advances = State.advances.filter(a => a.emp_id === p.emp_id);
-    const html = this._slipHTML(p, emp, advances);
-    const name = `Payslip_${emp.name.replace(/\s+/g,'_')}_${p.month}.pdf`;
-    try {
-      const blob = await this._renderPDF(html, name, 'blob');
-      const file = new File([blob], name, { type:'application/pdf' });
-      await navigator.share({ files:[file], title:`Pay Slip – ${emp.name} (${p.month})` });
-    } catch(e) { if (e.name !== 'AbortError') toast(e.message, 'error'); }
+    // Open print dialog; user can share/download from there
+    this.downloadPayslip(idx);
   }
 };
 
@@ -3046,8 +3024,7 @@ const EmployeeApp = {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
             <div>
               <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Attendance</div>
-              ${this._row('Full Days', p.full_days)}
-              ${this._row('Half Days', p.half_days)}
+              ${this._row('Total Days', p.TD)}
               ${this._row('Absent', p.absent_days)}
               ${this._row('Week Off', p.week_off_days)}
             </div>
@@ -3132,23 +3109,15 @@ const EmployeeApp = {
     </div>`;
   },
 
-  async _renderPDF(html, name, mode) {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:absolute;top:-99999px;left:0;width:600px;background:#ffffff;color:#0f172a';
-    wrap.innerHTML = html;
-    document.body.appendChild(wrap);
-    try {
-      const worker = html2pdf().set({
-        margin: 8, filename: name,
-        image: { type: 'jpeg', quality: .95 },
-        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(wrap);
-      if (mode === 'blob') return await worker.outputPdf('blob');
-      await worker.save();
-    } finally {
-      document.body.removeChild(wrap);
-    }
+  _printHTML(html, title) {
+    const win = window.open('', '_blank');
+    if (!win) { toast('Allow pop-ups to print/save PDF', 'error'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+      <style>*{box-sizing:border-box}body{margin:0;font-family:sans-serif;background:#fff;color:#0f172a}
+      @media print{body{margin:0}@page{margin:10mm}}</style></head><body>${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
   },
 
   async downloadPayslip() {
@@ -3173,7 +3142,7 @@ const EmployeeApp = {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Attendance</div>
-          ${sr('Full Days', p.full_days)}${sr('Half Days', p.half_days)}${sr('Absent', p.absent_days)}${sr('Week Off', p.week_off_days)}</div>
+          ${sr('Total Days', p.TD)}${sr('Absent', p.absent_days)}${sr('Week Off', p.week_off_days)}</div>
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Overtime</div>
           ${sr('Weekday OT', fmtHrs(p.ot_weekday_min))}${sr('Sunday OT', fmtHrs(p.ot_sunday_min))}${sr('Holiday OT', fmtHrs(p.ot_holiday_min))}</div>
       </div>
@@ -3200,17 +3169,11 @@ const EmployeeApp = {
           <tr style="background:#f1f5f9"><td style="padding:8px 10px;font-weight:700">Total Deducted</td><td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td></tr></tbody>
         </table></div>` : ''}
     </div>`;
-    const name = `Payslip_${State.empName.replace(/\s+/g,'_')}_${month}.pdf`;
-    try {
-      await this._renderPDF(html, name);
-      toast('Payslip downloaded', 'success');
-    } catch(e) { toast('PDF error: ' + e.message, 'error'); }
+    this._printHTML(html, `Payslip – ${State.empName} (${month})`);
   },
 
   async sharePayslip() {
-    if (!navigator.share) { toast('Share not supported on this browser', 'error'); return; }
-    if (!this._slip) { toast('No payslip loaded', 'error'); return; }
-    await this.downloadPayslip(); // fallback: just download; share via WhatsApp manually
+    this.downloadPayslip();
   }
 };
 
