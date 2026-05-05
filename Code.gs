@@ -147,7 +147,8 @@ function getEmployeeAdvanceHistory(data) {
       adv_start_date: p.adv_start_date,
       adv_end_date: p.adv_end_date,
       advances: advs,
-      total: total
+      total: total,
+      total_from_payroll: Number(p.total_advances) || 0
     };
   });
 
@@ -223,7 +224,7 @@ function initSheets() {
   const defs = {
     Employees: ['emp_id','name','team','designation','petpooja_id','petpooja_name','weekly_salary','login_code','status','joining_date','company_room'],
     Holidays:  ['date','name'],
-    Payroll:   ['payroll_id','emp_id','month','full_days','half_days','absent_days','week_off_days','holiday_absent_days','ot_weekday_min','ot_sunday_min','ot_holiday_min','shortfall_min','weekly_salary','daily_rate','hourly_rate','TD','gross_pay','ot_earnings','shortfall_deduction','bonus_eligible','bonus_cut','total_advances','net_pay','status','finalized_date','notes','adv_start_date','adv_end_date'],
+    Payroll:   ['payroll_id','emp_id','month','full_days','half_days','absent_days','week_off_days','holiday_absent_days','ot_weekday_min','ot_sunday_min','ot_holiday_min','shortfall_min','weekly_salary','daily_rate','hourly_rate','TD','gross_pay','ot_earnings','shortfall_deduction','bonus_eligible','bonus_cut','total_advances','net_pay','status','finalized_date','notes','adv_start_date','adv_end_date','attendance_json'],
     Advances:  ['advance_id','emp_id','emp_name','date','amount','status','created_by','created_at'],
     Bonus:     ['bonus_id','emp_id','month','eligible','contribution','payout','balance_after','notes'],
     Payments:  ['payment_id','emp_id','emp_name','month','date_paid','amount','mode','notes'],
@@ -497,7 +498,9 @@ function getPayroll(month) {
         shortfall_deduction: r[18], bonus_eligible: r[19], bonus_cut: r[20],
         total_advances: r[21], net_pay: r[22], status: r[23],
         finalized_date: r[24], notes: r[25],
-        adv_start_date: r[26] || '', adv_end_date: r[27] || ''
+        adv_start_date: r[26] ? (r[26] instanceof Date ? Utilities.formatDate(r[26], 'Asia/Kolkata', 'yyyy-MM-dd') : String(r[26]).substring(0, 10)) : '',
+        adv_end_date:   r[27] ? (r[27] instanceof Date ? Utilities.formatDate(r[27], 'Asia/Kolkata', 'yyyy-MM-dd') : String(r[27]).substring(0, 10)) : '',
+        attendance_json: r[28] || ''
       };
     });
   if (month) rows = rows.filter(function(p) { return p.month === month; });
@@ -524,7 +527,8 @@ function savePayroll(records) {
       rec.shortfall_deduction, rec.bonus_eligible, rec.bonus_cut,
       rec.total_advances, rec.net_pay, rec.status || 'draft',
       rec.finalized_date || '', rec.notes || '',
-      rec.adv_start_date || '', rec.adv_end_date || ''
+      rec.adv_start_date || '', rec.adv_end_date || '',
+      rec.attendance_json || ''
     ];
 
     const idx = existing.findIndex(function(r, i) {

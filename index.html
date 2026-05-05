@@ -1290,7 +1290,8 @@ Views.Payroll = {
       }
       const records = State.payroll.map(p => Object.assign({}, p, {
         adv_start_date: State.advStartDate,
-        adv_end_date:   State.advEndDate
+        adv_end_date:   State.advEndDate,
+        attendance_json: JSON.stringify(State.attendanceMap[p.emp_id] || [])
       }));
       await API.call('savePayroll', records);
       toast('Draft saved', 'success');
@@ -1336,7 +1337,17 @@ Views.Payroll = {
         p.net_pay = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - advTotal);
       });
 
+      // Restore day-by-day attendance from saved JSON
+      State.payroll.forEach(p => {
+        if (p.attendance_json) {
+          try { State.attendanceMap[p.emp_id] = JSON.parse(p.attendance_json); } catch(e) {}
+        }
+      });
+
       this.renderTable(State.payroll);
+      const allFinalized = State.payroll.length && State.payroll.every(p => p.status === 'finalized');
+      const btn = document.querySelector('[onclick="Views.Payroll.loadDraft()"]');
+      if (btn) btn.textContent = allFinalized ? 'Load Finalised Data' : 'Load Saved Draft';
       const isFinalized = State.payroll.some(p => p.status === 'finalized');
       const banner = document.getElementById('payroll-finalized-banner');
       if (banner) banner.style.display = isFinalized ? 'flex' : 'none';
@@ -1366,7 +1377,8 @@ Views.Payroll = {
       });
       const records = State.payroll.map(p => Object.assign({}, p, {
         adv_start_date: State.advStartDate,
-        adv_end_date:   State.advEndDate
+        adv_end_date:   State.advEndDate,
+        attendance_json: JSON.stringify(State.attendanceMap[p.emp_id] || [])
       }));
       await API.call('savePayroll', records);
       const r = await API.call('finalizePayroll', { month, adv_end_date: State.advEndDate });
@@ -1432,7 +1444,7 @@ Views.Payroll = {
   async _renderPDF(html, name, mode) {
     // Mount to DOM so html2pdf can compute styles correctly (empty PDFs happen otherwise)
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:600px;background:#ffffff;color:#0f172a;z-index:-1';
+    wrap.style.cssText = 'position:absolute;top:-99999px;left:0;width:600px;background:#ffffff;color:#0f172a';
     wrap.innerHTML = html;
     document.body.appendChild(wrap);
     try {
@@ -2943,13 +2955,22 @@ const EmployeeApp = {
         return;
       }
       pane.innerHTML = periods.map(period => {
-        const periodLabel = `${period.adv_start_date} to ${period.adv_end_date}`;
+        const startLabel = (period.adv_start_date || '').substring(0, 10);
+        const endLabel   = (period.adv_end_date   || '').substring(0, 10);
+        const periodLabel = startLabel && endLabel ? `${startLabel} to ${endLabel}` : period.month;
+        // Use fetched advances if available; fall back to stored total from payroll record
+        const displayTotal = period.advances.length ? period.total : (period.total_from_payroll || 0);
         if (!period.advances.length) {
           return `<div class="card" style="margin-bottom:14px">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
               <div><div style="font-weight:700;font-size:15px">${period.month}</div>
                 <div style="color:var(--muted);font-size:12px">${periodLabel}</div></div>
-              <div style="font-weight:700;color:var(--success);font-size:14px">No advances</div>
+              <div style="text-align:right">
+                ${displayTotal > 0
+                  ? `<div style="font-size:11px;color:var(--muted)">Total Deducted</div>
+                     <div style="font-weight:700;color:var(--warning);font-size:14px">${fmt(displayTotal)}</div>`
+                  : `<div style="font-weight:700;color:var(--success);font-size:14px">No advances</div>`}
+              </div>
             </div>
           </div>`;
         }
@@ -2959,7 +2980,7 @@ const EmployeeApp = {
               <div style="color:var(--muted);font-size:12px">${periodLabel}</div></div>
             <div style="text-align:right">
               <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Deducted</div>
-              <div style="font-weight:800;font-size:18px;color:var(--warning)">${fmt(period.total)}</div>
+              <div style="font-weight:800;font-size:18px;color:var(--warning)">${fmt(displayTotal)}</div>
             </div>
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3113,7 +3134,7 @@ const EmployeeApp = {
 
   async _renderPDF(html, name, mode) {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:600px;background:#ffffff;color:#0f172a;z-index:-1';
+    wrap.style.cssText = 'position:absolute;top:-99999px;left:0;width:600px;background:#ffffff;color:#0f172a';
     wrap.innerHTML = html;
     document.body.appendChild(wrap);
     try {
@@ -3132,12 +3153,16 @@ const EmployeeApp = {
 
   async downloadPayslip() {
     if (!this._slip) { toast('No payslip loaded', 'error'); return; }
-    const { p, advances, month } = this._slip;
+    const { p, advances, month, bonus_balance } = this._slip;
     const sr = (l, v) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#64748b">${l}</span><span style="font-weight:500">${v}</span></div>`;
-    const advTotal   = advances.reduce((s, a) => s + Number(a.amount), 0);
+    const advTotal   = advances.length ? advances.reduce((s, a) => s + Number(a.amount), 0) : (p.total_advances || 0);
+    const bonusCut   = p.bonus_cut || 0;
     const grossTotal = (p.gross_pay || 0) + (p.ot_earnings || 0);
-    const deductions = (p.shortfall_deduction || 0) + advTotal;
+    const deductions = (p.shortfall_deduction || 0) + advTotal + bonusCut;
     const net        = grossTotal - deductions;
+    const companyCont = parseInt(State.settings.COMPANY_CONTRIBUTION || 500);
+    const bonusAdd    = p.bonus_eligible ? (bonusCut + companyCont) : 0;
+    const newBonusBal = (bonus_balance || 0) + bonusAdd;
     const period     = p.adv_start_date && p.adv_end_date ? `${p.adv_start_date} → ${p.adv_end_date}` : '—';
     const html = `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
@@ -3157,9 +3182,14 @@ const EmployeeApp = {
           ${sr('Gross Pay', fmt(p.gross_pay||0))}${sr('OT Earnings', fmt(p.ot_earnings||0))}
           <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Earnings</span><span>${fmt(grossTotal)}</span></div></div>
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Deductions</div>
-          ${sr('Shortfall', fmt(p.shortfall_deduction||0))}${sr('Advances', fmt(advTotal))}
+          ${sr('Shortfall', fmt(p.shortfall_deduction||0))}${sr('Advances', fmt(advTotal))}${bonusCut > 0 ? sr('Bonus Contribution', fmt(bonusCut)) : ''}
           <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Deductions</span><span>${fmt(deductions)}</span></div></div>
       </div>
+      ${newBonusBal > 0 ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase">Bonus Pool Balance</div>
+          <div style="font-size:11px;color:#166534;margin-top:2px">Prev ₹${(bonus_balance||0).toLocaleString('en-IN')} + This month ₹${bonusAdd.toLocaleString('en-IN')}</div></div>
+        <div style="font-weight:800;font-size:18px;color:#15803d">₹${newBonusBal.toLocaleString('en-IN')}</div>
+      </div>` : ''}
       <div style="background:#2563eb;color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:700;font-size:15px">Net In-Hand</span><span style="font-weight:800;font-size:22px">${fmt(net)}</span>
       </div>
