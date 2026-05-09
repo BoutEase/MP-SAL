@@ -5,85 +5,248 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#00D4D4">
   <title>MP-SAL Payroll</title>
   <link rel="manifest" href="manifest.json">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,500;0,600;0,700;1,500;1,600;1,700&display=swap" rel="stylesheet">
   <style>
+    /* ── BoutEase Design Tokens ── */
     :root {
-      --bg: #f8fafc; --surface: #ffffff; --surface2: #f1f5f9;
-      --border: #e2e8f0; --text: #0f172a; --muted: #64748b;
-      --primary: #2563eb; --primary-dark: #1d4ed8; --primary-light: #dbeafe;
-      --danger: #dc2626; --danger-light: #fee2e2;
-      --success: #16a34a; --success-light: #dcfce7;
-      --warning: #d97706; --warning-light: #fef3c7;
-      --radius: 10px; --radius-sm: 6px;
-      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
-      --shadow-md: 0 4px 12px rgba(0,0,0,.1);
+      /* Surfaces */
+      --bg:        #F5FEFE;
+      --surface:   #FFFFFF;
+      --surface2:  #EAF9F9;
+      --surface3:  #E0F7F7;
+      --border:    rgba(0,180,180,0.18);
+      --border-2:  rgba(0,180,180,0.32);
+
+      /* Ink */
+      --text:   #0F2F2F;
+      --muted:  #527070;
+      --muted2: #8AA5A5;
+
+      /* Brand */
+      --primary:       #00D4D4;
+      --primary-dark:  #009E9E;
+      --primary-light: #E0FAFA;
+      --accent:        #F28C28;
+      --accent-light:  #FFF4E6;
+
+      /* Status */
+      --success:       #28A745;
+      --success-light: #DFF5E4;
+      --danger:        #DC3545;
+      --danger-light:  #F9DDE0;
+      --warning:       #F28C28;
+      --warning-light: #FFE9D2;
+
+      /* Type */
+      --font-sans:  'Sora', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-serif: 'Lora', Georgia, serif;
+      --font-mono:  ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
+
+      /* Shape */
+      --radius:    12px;
+      --radius-sm: 8px;
+      --shadow:    0 1px 0 rgba(0,180,180,.06), 0 2px 6px rgba(0,180,180,.06);
+      --shadow-md: 0 4px 18px rgba(0,180,180,.12), 0 1px 3px rgba(15,47,47,.05);
+      --shadow-teal:   0 4px 18px rgba(0,212,212,.28);
+      --shadow-orange: 0 4px 18px rgba(242,140,40,.22);
     }
     [data-theme="dark"] {
-      --bg: #0f172a; --surface: #1e293b; --surface2: #273549;
-      --border: #334155; --text: #f1f5f9; --muted: #94a3b8;
-      --primary: #3b82f6; --primary-dark: #2563eb; --primary-light: #1e3a5f;
-      --danger: #ef4444; --danger-light: #3b0f0f;
-      --success: #22c55e; --success-light: #052e16;
-      --warning: #f59e0b; --warning-light: #431407;
+      --bg: #0A1F1F; --surface: #0F2929; --surface2: #143434; --surface3: #1A4040;
+      --border: rgba(0,212,212,0.15); --border-2: rgba(0,212,212,0.28);
+      --text: #EAF9F9; --muted: #88B5B5; --muted2: #5A8585;
+      --primary: #00D4D4; --primary-dark: #00AEAE; --primary-light: #0F3B3B;
+      --accent: #F28C28; --accent-light: #2E1F0F;
+      --success: #4CAF72; --success-light: #143524;
+      --danger: #E06070; --danger-light: #3A1820;
+      --warning: #F28C28; --warning-light: #2E1F0F;
     }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+    html, body {
+      height: 100%;
+      font-family: var(--font-sans);
+      background: var(--bg); color: var(--text);
+      font-size: 14px; line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
     .hidden { display: none !important; }
     .screen { min-height: 100vh; }
 
-    /* Buttons */
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 18px; border-radius: var(--radius-sm); border: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all .15s; }
-    .btn-primary { background: var(--primary); color: #fff; }
-    .btn-primary:hover { background: var(--primary-dark); }
-    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-    .btn-secondary:hover { background: var(--border); }
-    .btn-danger { background: var(--danger); color: #fff; }
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px 16px; border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border-2);
+      background: var(--surface); color: var(--text);
+      font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .18s; white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--primary-dark); color: var(--primary-dark); }
+    .btn-primary {
+      background: var(--primary); color: var(--text);
+      border-color: var(--primary); box-shadow: var(--shadow-teal); font-weight: 700;
+    }
+    .btn-primary:hover { background: #00EEEE; border-color: #00EEEE; color: var(--text); transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--surface); color: var(--text); border-color: var(--border-2);
+    }
+    .btn-secondary:hover { background: var(--surface2); }
+    .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
     .btn-danger:hover { opacity: .9; }
-    .btn-sm { padding: 5px 12px; font-size: 13px; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 7px; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
 
-    /* Inputs */
-    input, select, textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 14px; outline: none; transition: border .15s; }
-    input:focus, select:focus, textarea:focus { border-color: var(--primary); }
-    label { font-size: 13px; font-weight: 500; color: var(--muted); display: block; margin-bottom: 4px; }
+    /* ── Inputs ── */
+    input, select, textarea {
+      width: 100%; padding: 9px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text);
+      font-family: var(--font-sans); font-size: 13px;
+      outline: none; transition: border .15s, box-shadow .15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(0,212,212,.12);
+    }
+    input::placeholder { color: var(--muted2); }
+    label {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      display: block; margin-bottom: 5px;
+      letter-spacing: .05em; text-transform: uppercase;
+    }
     .field { margin-bottom: 14px; }
 
-    /* Cards */
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+    /* ── Cards ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    }
 
-    /* Badge */
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+    /* ── Badges ── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border-radius: 99px;
+      font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    }
     .badge-success { background: var(--success-light); color: var(--success); }
     .badge-warning { background: var(--warning-light); color: var(--warning); }
     .badge-danger  { background: var(--danger-light);  color: var(--danger); }
-    .badge-primary { background: var(--primary-light); color: var(--primary); }
+    .badge-primary { background: var(--primary-light); color: var(--primary-dark); }
+
+    /* ── Tables ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      text-align: left; font-size: 10.5px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+      padding: 11px 14px; background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap; position: sticky; top: 0; z-index: 1;
+    }
+    tbody td {
+      padding: 11px 14px; border-bottom: 1px solid var(--border);
+      vertical-align: middle; color: var(--text);
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #F0FDFD; }
 
     /* ── Setup Screen ── */
-    #screen-setup { display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .setup-box { width: 100%; max-width: 420px; }
-    .setup-box h1 { font-size: 22px; margin-bottom: 4px; }
-    .setup-box p  { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    #screen-setup { display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); }
+    .setup-box { width: 100%; max-width: 440px; }
+    .setup-box h1 { font-family: var(--font-serif); font-size: 26px; font-weight: 700; margin-bottom: 6px; letter-spacing: -.02em; }
+    .setup-box p  { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
 
     /* ── Login Screen ── */
-    #screen-login { display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .login-box { width: 100%; max-width: 360px; }
-    .login-logo { text-align: center; margin-bottom: 28px; }
-    .login-logo .logo-mark { width: 56px; height: 56px; background: var(--primary); border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; color: #fff; margin-bottom: 10px; }
-    .login-logo h1 { font-size: 20px; font-weight: 700; }
-    .login-logo p  { font-size: 13px; color: var(--muted); }
-    .role-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
-    .role-tab { flex: 1; padding: 10px; text-align: center; border: 2px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; font-weight: 500; transition: all .15s; background: var(--surface); }
-    .role-tab.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
-    .pin-input { font-size: 24px; letter-spacing: 8px; text-align: center; font-weight: 700; }
-    .login-footer { margin-top: 16px; text-align: center; }
-    .theme-toggle { background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer; font-size: 13px; color: var(--muted); }
+    #screen-login { display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); min-height: 100vh; }
+    .login-box { width: 100%; max-width: 380px; }
+    .login-logo { text-align: center; margin-bottom: 32px; }
+    .login-logo .logo-mark {
+      width: 56px; height: 56px; background: var(--primary); border-radius: 14px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: var(--font-serif); font-style: italic; font-size: 26px;
+      color: var(--text); margin-bottom: 14px;
+      box-shadow: var(--shadow-teal);
+    }
+    .login-logo h1 { font-family: var(--font-serif); font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+    .login-logo p  { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .role-tabs { display: flex; gap: 3px; padding: 3px; background: var(--surface2); border-radius: 10px; margin-bottom: 20px; border: 1px solid var(--border); }
+    .role-tab { flex: 1; padding: 8px 10px; text-align: center; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all .15s; color: var(--muted); background: transparent; border: none; }
+    .role-tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+    .pin-input { font-size: 24px; letter-spacing: 8px; text-align: center; font-weight: 700; height: 54px; }
+    .login-footer { margin-top: 18px; text-align: center; }
+    .theme-toggle {
+      background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 6px 14px; cursor: pointer; font-size: 12px; color: var(--muted);
+      font-family: var(--font-sans); font-weight: 500;
+    }
+    .theme-toggle:hover { color: var(--text); border-color: var(--border-2); }
+
+    /* ── Sidebar ── */
+    .mp-sidebar {
+      width: 224px; flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      padding: 18px 12px;
+      height: 100vh; overflow-y: auto; position: sticky; top: 0;
+    }
+    .mp-sidebar::-webkit-scrollbar { display: none; }
+    .mp-sidebar-brand {
+      display: flex; align-items: center; gap: 10px;
+      padding: 4px 8px 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .mp-brand-mark {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--primary); color: var(--text);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: var(--font-serif); font-style: italic; font-size: 18px; font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,212,212,.3); flex-shrink: 0;
+    }
+    .mp-brand-name { font-family: var(--font-serif); font-weight: 700; font-size: 15px; letter-spacing: -.02em; }
+    .mp-brand-sub  { font-size: 10.5px; color: var(--muted); margin-top: 1px; font-weight: 500; }
+    .mp-nav-section {
+      font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--muted2); padding: 12px 10px 4px;
+    }
+    .mp-nav-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 8px 10px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; color: var(--muted);
+      cursor: pointer; user-select: none; transition: all .15s;
+      border: none; background: transparent; width: 100%; text-align: left;
+    }
+    .mp-nav-item:hover { background: var(--surface2); color: var(--primary-dark); }
+    .mp-nav-item.active {
+      background: var(--primary-light); color: var(--text); font-weight: 700;
+      box-shadow: inset 0 0 0 1px var(--border-2);
+    }
+    .mp-nav-item svg { opacity: .6; flex-shrink: 0; }
+    .mp-nav-item.active svg { opacity: 1; color: var(--primary-dark); }
+    .mp-sidebar-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); display: flex; gap: 6px; }
+
+    /* ── Topbar ── */
+    .mp-topbar {
+      height: 56px; padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(12px);
+      position: sticky; top: 0; z-index: 20; flex-shrink: 0;
+    }
+    [data-theme="dark"] .mp-topbar { background: rgba(15,41,41,.92); }
+    .mp-topbar-title { font-family: var(--font-serif); font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
 
     /* ── Toast ── */
-    #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 20px; border-radius: 8px; font-size: 14px; z-index: 9999; opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
+    #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--surface); padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 9999; opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; box-shadow: var(--shadow-md); }
     #toast.show { opacity: 1; }
 
     /* ── Spinner ── */
@@ -92,6 +255,32 @@
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
+
+    /* ── Admin layout ── */
+    #screen-admin { display: flex; height: 100vh; overflow: hidden; }
+    .mp-admin-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .mp-admin-main { flex: 1; overflow: auto; padding: 24px 28px; }
+
+    /* ── Mobile bottom nav ── */
+    .mp-mobile-nav { display: none; }
+    @media (max-width: 768px) {
+      .mp-sidebar { display: none; }
+      .mp-admin-main { padding: 12px 14px 80px; }
+      .mp-mobile-nav {
+        display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+        background: var(--surface); border-top: 1px solid var(--border);
+        padding: 8px 4px env(safe-area-inset-bottom);
+      }
+      .mp-mobile-nav-item {
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+        padding: 4px 2px; border: none; background: none; cursor: pointer;
+        font-size: 10px; font-weight: 600; color: var(--muted2); font-family: var(--font-sans);
+      }
+      .mp-mobile-nav-item.active { color: var(--primary-dark); }
+      .mp-mobile-nav-item svg { opacity: .6; }
+      .mp-mobile-nav-item.active svg { opacity: 1; }
+      .mp-topbar { padding: 0 14px; }
+    }
   </style>
 </head>
 <body>
@@ -114,8 +303,8 @@
 <div id="screen-login" class="screen hidden">
   <div class="login-box">
     <div class="login-logo">
-      <div class="logo-mark">&#9773;</div>
-      <h1>MP-SAL</h1>
+      <div class="logo-mark">M</div>
+      <h1>MP&#x2009;SAL</h1>
       <p>Mahitha Prasad Payroll</p>
     </div>
     <div class="card">
@@ -530,40 +719,67 @@ const AdminApp = {
   },
 
   renderShell() {
+    const navItems = [
+      { id: 'payroll',   label: 'Payroll',    icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' },
+      { id: 'employees', label: 'Employees',  icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
+      { id: 'advances',  label: 'Advances',   icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' },
+      { id: 'bonus',     label: 'Bonus Pool', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
+      { id: 'payments',  label: 'Payments',   icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>' },
+      { id: 'settings',  label: 'Settings',   icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' },
+    ];
     return `
-    <header style="background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:12px;height:52px;position:sticky;top:0;z-index:100">
-      <span style="font-weight:700;font-size:16px">MP&#x2009;SAL</span>
-      <span style="flex:1"></span>
-      <button class="theme-toggle" onclick="App.toggleTheme()" style="border:1px solid var(--border);background:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--muted)">Theme</button>
-      <button class="theme-toggle" onclick="Auth.logout()" style="border:1px solid var(--border);background:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--danger)">Logout</button>
-    </header>
-    <nav style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border);background:var(--surface);padding:0 8px">
-      ${['payroll','employees','advances','bonus','payments','settings'].map(v =>
-        `<button id="nav-${v}" onclick="AdminApp.switchView('${v}')"
-          style="padding:12px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;border-bottom:2px solid transparent;color:var(--muted)"
-          >${v.charAt(0).toUpperCase()+v.slice(1)}</button>`
-      ).join('')}
-    </nav>
-    <main style="padding:16px;max-width:1200px;margin:0 auto">
-      <div id="view-payroll"   class="view"></div>
-      <div id="view-employees" class="view hidden"></div>
-      <div id="view-advances"  class="view hidden"></div>
-      <div id="view-bonus"     class="view hidden"></div>
-      <div id="view-payments"  class="view hidden"></div>
-      <div id="view-settings"  class="view hidden"></div>
-    </main>`;
+    <aside class="mp-sidebar">
+      <div class="mp-sidebar-brand">
+        <span class="mp-brand-mark">M</span>
+        <div>
+          <div class="mp-brand-name">MP&#x2009;SAL</div>
+          <div class="mp-brand-sub">Mahitha Prasad</div>
+        </div>
+      </div>
+      <div class="mp-nav-section">Workspace</div>
+      ${navItems.map(item => `
+        <button id="nav-${item.id}" class="mp-nav-item" onclick="AdminApp.switchView('${item.id}')">
+          ${item.icon} ${item.label}
+        </button>`).join('')}
+      <div class="mp-sidebar-footer">
+        <button class="btn btn-secondary btn-sm" onclick="App.toggleTheme()" style="flex:1">Theme</button>
+        <button class="btn btn-danger btn-sm" onclick="Auth.logout()" style="flex:1">Logout</button>
+      </div>
+    </aside>
+    <div class="mp-admin-body">
+      <div class="mp-topbar">
+        <span class="mp-topbar-title" id="mp-topbar-title">Payroll</span>
+        <span style="flex:1"></span>
+      </div>
+      <main class="mp-admin-main">
+        <div id="view-payroll"   class="view"></div>
+        <div id="view-employees" class="view hidden"></div>
+        <div id="view-advances"  class="view hidden"></div>
+        <div id="view-bonus"     class="view hidden"></div>
+        <div id="view-payments"  class="view hidden"></div>
+        <div id="view-settings"  class="view hidden"></div>
+      </main>
+    </div>
+    <nav class="mp-mobile-nav">
+      ${navItems.map(item => `
+        <button id="mob-nav-${item.id}" class="mp-mobile-nav-item" onclick="AdminApp.switchView('${item.id}')">
+          ${item.icon} <span>${item.label.split(' ')[0]}</span>
+        </button>`).join('')}
+    </nav>`;
   },
 
   switchView(name) {
     this.activeView = name;
     document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
     document.getElementById('view-' + name)?.classList.remove('hidden');
-    document.querySelectorAll('nav button').forEach(b => {
-      b.style.borderBottomColor = 'transparent';
-      b.style.color = 'var(--muted)';
-    });
-    const active = document.getElementById('nav-' + name);
-    if (active) { active.style.borderBottomColor = 'var(--primary)'; active.style.color = 'var(--primary)'; }
+    document.querySelectorAll('.mp-nav-item').forEach(b => b.classList.remove('active'));
+    document.getElementById('nav-' + name)?.classList.add('active');
+    document.querySelectorAll('.mp-mobile-nav-item').forEach(b => b.classList.remove('active'));
+    document.getElementById('mob-nav-' + name)?.classList.add('active');
+    const titles = { payroll: 'Payroll', employees: 'Employees', advances: 'Advances',
+                     bonus: 'Bonus Pool', payments: 'Payments', settings: 'Settings' };
+    const titleEl = document.getElementById('mp-topbar-title');
+    if (titleEl) titleEl.textContent = titles[name] || name;
 
     const loaders = { employees: Views.Employees, advances: Views.Advances,
                       bonus: Views.Bonus, payments: Views.Payments, settings: Views.Settings };
@@ -2676,14 +2892,17 @@ const ManagerApp = {
     const c = document.getElementById('screen-manager');
     const today = new Date().toISOString().split('T')[0];
     c.innerHTML = `
-    <header style="background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:12px;height:52px">
-      <span style="font-weight:700;font-size:16px">MP&#x2009;SAL &mdash; Manager</span>
+    <div style="min-height:100vh;background:var(--bg)">
+    <div class="mp-topbar">
+      <span class="mp-brand-mark" style="width:28px;height:28px;font-size:15px">M</span>
+      <span class="mp-topbar-title">MP&#x2009;SAL</span>
+      <span style="font-size:12px;color:var(--muted);font-weight:600;background:var(--accent-light);color:var(--accent);padding:3px 10px;border-radius:99px;margin-left:4px">Manager</span>
       <span style="flex:1"></span>
-      <button onclick="App.toggleTheme()" style="border:1px solid var(--border);background:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--muted)">Theme</button>
-      <button onclick="Auth.logout()" style="border:1px solid var(--border);background:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--danger)">Logout</button>
-    </header>
-    <main style="padding:16px;max-width:680px;margin:0 auto">
-      <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Advance Entry</h2>
+      <button class="btn btn-secondary btn-sm" onclick="App.toggleTheme()">Theme</button>
+      <button class="btn btn-danger btn-sm" onclick="Auth.logout()" style="margin-left:6px">Logout</button>
+    </div>
+    <main style="padding:24px 28px;max-width:760px;margin:0 auto">
+      <h2 style="font-family:var(--font-serif);font-size:20px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em">Advance Entry</h2>
       <div class="card" style="margin-bottom:20px">
         <div class="field" style="margin-bottom:16px">
           <label style="font-weight:600">Date</label>
@@ -2705,7 +2924,8 @@ const ManagerApp = {
         <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="ManagerApp.submit()">Submit</button>
       </div>
       <div id="m-submitted"></div>
-    </main>`;
+    </main>
+    </div>`;
     this.loadForDate(today);
   },
 
@@ -2948,31 +3168,31 @@ const EmployeeApp = {
     show('screen-employee');
     const c = document.getElementById('screen-employee');
     c.innerHTML = `
-      <div style="max-width:680px;margin:0 auto;padding:20px 16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-          <div style="font-weight:700;font-size:18px">MP-SAL</div>
+      <div style="min-height:100vh;background:var(--bg)">
+        <div class="mp-topbar" style="max-width:760px;margin:0 auto;padding:0 20px">
+          <span class="mp-brand-mark" style="width:28px;height:28px;font-size:15px">M</span>
+          <span class="mp-topbar-title" style="font-size:14px">MP&#x2009;SAL</span>
           <span style="flex:1"></span>
-          <span style="font-size:14px;color:var(--muted)">${State.empName}</span>
-          <button class="btn btn-secondary btn-sm" onclick="Auth.logout()">Logout</button>
+          <span style="font-size:13px;color:var(--muted);font-weight:500">${State.empName}</span>
+          <button class="btn btn-secondary btn-sm" onclick="Auth.logout()" style="margin-left:8px">Logout</button>
         </div>
-
-        <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
-          <button id="emp-tab-payslip"  onclick="EmployeeApp.showTab('payslip')"
-            style="background:none;border:none;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary);color:var(--primary);margin-bottom:-1px">Pay Slip</button>
-          <button id="emp-tab-advances" onclick="EmployeeApp.showTab('advances')"
-            style="background:none;border:none;padding:10px 16px;font-size:14px;font-weight:500;cursor:pointer;border-bottom:none;color:var(--muted)">My Advances</button>
-        </div>
-
-        <div id="emp-pane-payslip">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-            <label style="font-weight:600;font-size:14px">Pay Slip for</label>
-            <input type="month" id="emp-month" value="${this.currentMonth}"
-              style="padding:6px 10px" onchange="EmployeeApp.load(this.value)" />
+        <div style="max-width:760px;margin:0 auto;padding:20px 20px">
+          <div class="role-tabs" style="max-width:320px;margin-bottom:20px">
+            <button id="emp-tab-payslip"  class="role-tab active" onclick="EmployeeApp.showTab('payslip')">Pay Slip</button>
+            <button id="emp-tab-advances" class="role-tab"        onclick="EmployeeApp.showTab('advances')">My Advances</button>
           </div>
-          <div id="emp-slip"></div>
-        </div>
 
-        <div id="emp-pane-advances" class="hidden"></div>
+          <div id="emp-pane-payslip">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+              <label style="font-size:13px;font-weight:600;color:var(--muted);margin:0">Pay Slip for</label>
+              <input type="month" id="emp-month" value="${this.currentMonth}"
+                style="width:auto;padding:6px 10px" onchange="EmployeeApp.load(this.value)" />
+            </div>
+            <div id="emp-slip"></div>
+          </div>
+
+          <div id="emp-pane-advances" class="hidden"></div>
+        </div>
       </div>`;
     this.load(this.currentMonth);
   },
@@ -2982,13 +3202,11 @@ const EmployeeApp = {
     const advTab = document.getElementById('emp-tab-advances');
     const payPane = document.getElementById('emp-pane-payslip');
     const advPane = document.getElementById('emp-pane-advances');
-    const active = (el) => { el.style.borderBottom = '2px solid var(--primary)'; el.style.color = 'var(--primary)'; el.style.marginBottom = '-1px'; };
-    const inactive = (el) => { el.style.borderBottom = 'none'; el.style.color = 'var(--muted)'; el.style.marginBottom = '0'; };
     if (tab === 'payslip') {
-      active(payTab); inactive(advTab);
+      payTab.classList.add('active'); advTab.classList.remove('active');
       payPane.classList.remove('hidden'); advPane.classList.add('hidden');
     } else {
-      active(advTab); inactive(payTab);
+      advTab.classList.add('active'); payTab.classList.remove('active');
       advPane.classList.remove('hidden'); payPane.classList.add('hidden');
       this.loadAdvances();
     }
