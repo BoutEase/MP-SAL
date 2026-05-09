@@ -918,6 +918,8 @@ Views.Payroll = {
         this.renderTable(matched);
         if (matched.length) {
           toast(`Calculated payroll for ${matched.length} employee(s) — ${unmatched.length} unmatched`, 'success');
+          // Persist attendance_json even for finalized months so Detail view works after reload
+          this._patchAttendanceJson();
         } else {
           toast(`0 employees matched. Use the mapping panel below to assign them manually.`, 'error');
         }
@@ -927,6 +929,14 @@ Views.Payroll = {
       }
     };
     reader.readAsArrayBuffer(file);
+  },
+
+  async _patchAttendanceJson() {
+    const records = State.payroll
+      .filter(p => State.attendanceMap[p.emp_id]?.length)
+      .map(p => ({ emp_id: p.emp_id, month: p.month, attendance_json: JSON.stringify(State.attendanceMap[p.emp_id]) }));
+    if (!records.length) return;
+    try { await API.call('patchAttendanceJson', { records }); } catch(e) { /* silent */ }
   },
 
   renderUnmatched(list) {
