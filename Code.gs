@@ -49,8 +49,10 @@ function doPost(e) {
       approveAdvances: () => approveAdvances(data.advance_ids),
       deleteAdvance:   () => deleteAdvance(data.advance_id),
       getPayroll:      () => getPayroll(data && data.month),
-      savePayroll:     () => savePayroll(data),
-      finalizePayroll: () => finalizePayroll(data),
+      savePayroll:          () => savePayroll(data),
+      patchAttendanceJson:  () => patchAttendanceJson(data),
+      reopenPayrollRecord:  () => reopenPayrollRecord(data),
+      finalizePayroll:      () => finalizePayroll(data),
       getPayments:     () => getPayments(data && data.month),
       savePayment:     () => savePayment(data),
       deletePayment:   () => deletePayment(data.payment_id),
@@ -553,6 +555,48 @@ function savePayroll(records) {
   });
 
   return { success: true };
+}
+
+<<<<<<< HEAD
+// Patch attendance_json on existing rows (including finalized) without touching other columns.
+function patchAttendanceJson(data) {
+  var records = Array.isArray(data) ? data : (data.records || []);
+  var sheet = getSheet('Payroll');
+  var rows = sheet.getDataRange().getValues();
+  var patched = 0;
+  records.forEach(function(rec) {
+    if (!rec.emp_id || !rec.month || rec.attendance_json === undefined) return;
+    var idx = -1;
+    for (var i = 1; i < rows.length; i++) {
+      var rowMonth = rows[i][2] instanceof Date
+        ? Utilities.formatDate(rows[i][2], 'Asia/Kolkata', 'yyyy-MM')
+        : String(rows[i][2]).substring(0, 7);
+      if (String(rows[i][1]) === String(rec.emp_id) && rowMonth === rec.month) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    sheet.getRange(idx + 1, 29).setValue(rec.attendance_json);
+    rows[idx][28] = rec.attendance_json;
+    patched++;
+  });
+  return { success: true, patched: patched };
+=======
+function reopenPayrollRecord(data) {
+  var emp_id = String(data.emp_id);
+  var month  = data.month;
+  var sheet  = getSheet('Payroll');
+  var rows   = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var rowMonth = rows[i][2] instanceof Date
+      ? Utilities.formatDate(rows[i][2], 'Asia/Kolkata', 'yyyy-MM')
+      : String(rows[i][2]).substring(0, 7);
+    if (String(rows[i][1]) === emp_id && rowMonth === month) {
+      sheet.getRange(i + 1, 24).setValue('draft');
+      sheet.getRange(i + 1, 25).setValue('');
+      return { success: true };
+    }
+  }
+  return { success: false, error: 'Record not found' };
+>>>>>>> e505208 (Add reopen-for-edit on finalized payroll records)
 }
 
 function finalizePayroll(data) {
