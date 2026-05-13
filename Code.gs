@@ -557,7 +557,6 @@ function savePayroll(records) {
   return { success: true };
 }
 
-<<<<<<< HEAD
 // Patch attendance_json on existing rows (including finalized) without touching other columns.
 function patchAttendanceJson(data) {
   var records = Array.isArray(data) ? data : (data.records || []);
@@ -579,7 +578,8 @@ function patchAttendanceJson(data) {
     patched++;
   });
   return { success: true, patched: patched };
-=======
+}
+
 function reopenPayrollRecord(data) {
   var emp_id = String(data.emp_id);
   var month  = data.month;
@@ -596,7 +596,6 @@ function reopenPayrollRecord(data) {
     }
   }
   return { success: false, error: 'Record not found' };
->>>>>>> e505208 (Add reopen-for-edit on finalized payroll records)
 }
 
 function finalizePayroll(data) {
