@@ -1285,8 +1285,9 @@ Views.Payroll = {
         <table id="calc-panel-${idx}" style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
           <tbody>${calcPanel(p)}</tbody>
         </table>
-        <div style="margin-top:12px">
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Close</button>
+          ${locked ? `<button class="btn btn-sm" style="border-color:var(--accent);color:var(--accent)" onclick="Views.Payroll.reopenRecord(${idx})">&#9998; Reopen for Edit</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -1349,6 +1350,22 @@ Views.Payroll = {
       document.getElementById('prow-detail-' + idx)?.classList.remove('hidden');
     }, 50);
     toast('Attendance saved & recalculated', 'success');
+  },
+
+  async reopenRecord(idx) {
+    const p   = State.payroll[idx];
+    const emp = State.employees.find(e => e.emp_id === p.emp_id);
+    const name = emp?.name || p.emp_id;
+    if (!confirm(`Reopen ${name}'s record for ${p.month}?\n\nThis sets their payroll back to draft so you can make corrections, then re-finalise.\n\nNote: this only affects this one employee — other records remain finalised.`)) return;
+    try {
+      await API.call('reopenPayrollRecord', { emp_id: p.emp_id, month: p.month });
+      State.payroll[idx].status = 'draft';
+      State.payroll[idx].finalized_date = '';
+      // Close detail panel, re-render table so Edit button becomes available
+      document.querySelectorAll('[id^="prow-detail-"]').forEach(r => r.classList.add('hidden'));
+      this.renderTable(State.payroll);
+      toast(`${name} reopened — make corrections, then Finalise Month`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
   },
 
   editRow(idx) {
