@@ -1775,7 +1775,7 @@ Views.Employees = {
   },
 
   openForm(empId) {
-    const emp = empId ? State.employees.find(e => e.emp_id === empId) : {};
+    const emp = (empId ? State.employees.find(e => String(e.emp_id) === String(empId)) : null) || {};
     const c = document.getElementById('emp-form-wrap');
     c.innerHTML = `<div class="card" style="margin-bottom:16px">
       <h3 style="font-size:15px;margin-bottom:14px">${empId ? 'Edit' : 'Add'} Employee</h3>
