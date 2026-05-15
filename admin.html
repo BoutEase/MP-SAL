@@ -1777,6 +1777,8 @@ Views.Employees = {
   openForm(empId) {
     const emp = (empId ? State.employees.find(e => String(e.emp_id) === String(empId)) : null) || {};
     const c = document.getElementById('emp-form-wrap');
+    // Close any existing form first so the DOM is fresh before re-render
+    c.innerHTML = '';
     c.innerHTML = `<div class="card" style="margin-bottom:16px">
       <h3 style="font-size:15px;margin-bottom:14px">${empId ? 'Edit' : 'Add'} Employee</h3>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
@@ -1814,6 +1816,7 @@ Views.Employees = {
         <button class="btn btn-secondary btn-sm" onclick="Views.Employees.closeForm()">Cancel</button>
       </div>
     </div>`;
+    c.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   },
 
   closeForm() { document.getElementById('emp-form-wrap').innerHTML = ''; },
