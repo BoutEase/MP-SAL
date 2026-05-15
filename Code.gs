@@ -404,29 +404,36 @@ function getAdvances(filter) {
 }
 
 function saveAdvance(data) {
-  const sheet = getSheet('Advances');
-  const rows = sheet.getDataRange().getValues();
-  // Force date to string so Google Sheets won't auto-convert to Date type
-  var dateStr = String(data.date).substring(0, 10);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getSheet('Advances');
+    const rows = sheet.getDataRange().getValues();
+    // Force date to string so Google Sheets won't auto-convert to Date type
+    var dateStr = String(data.date).substring(0, 10);
+    var amount = Math.round(Number(data.amount) || 0);
 
-  if (!data.advance_id) {
-    const nums = rows.slice(1).filter(function(r) { return r[0]; })
-      .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
-    const next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(5, '0');
-    data.advance_id = 'ADV' + next;
-    data.created_at = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
-    sheet.appendRow([
-      data.advance_id, data.emp_id, data.emp_name, dateStr,
-      data.amount, 'Pending', data.created_by || 'Manager', data.created_at
-    ]);
-  } else {
-    // Edit: update date and amount, reset to Pending so admin re-approves
-    const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.advance_id; });
-    if (idx > 0) {
-      sheet.getRange(idx + 1, 4, 1, 3).setValues([[dateStr, data.amount, 'Pending']]);
+    if (!data.advance_id) {
+      const nums = rows.slice(1).filter(function(r) { return r[0]; })
+        .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
+      const next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(5, '0');
+      data.advance_id = 'ADV' + next;
+      data.created_at = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
+      sheet.appendRow([
+        data.advance_id, data.emp_id, data.emp_name, dateStr,
+        amount, 'Pending', data.created_by || 'Manager', data.created_at
+      ]);
+    } else {
+      // Edit: update date and amount, reset to Pending so admin re-approves
+      const idx = rows.findIndex(function(r, i) { return i > 0 && String(r[0]) === String(data.advance_id); });
+      if (idx > 0) {
+        sheet.getRange(idx + 1, 4, 1, 3).setValues([[dateStr, amount, 'Pending']]);
+      }
     }
+    return { success: true, advance_id: data.advance_id };
+  } finally {
+    lock.releaseLock();
   }
-  return { success: true, advance_id: data.advance_id };
 }
 
 function approveAdvance(advanceId) {

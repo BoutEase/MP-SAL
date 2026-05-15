@@ -675,24 +675,26 @@ const ManagerApp = {
     } catch(e) { toast(e.message, 'error'); return; }
 
     const emps = State.employees.filter(e => e.status === 'Active');
-    const ops = [];
+    // Build task functions (not Promises) so saves execute one-at-a-time,
+    // preventing race conditions in concurrent appendRow / setValues on the sheet.
+    const tasks = [];
     let count = 0;
     for (const emp of emps) {
-      const val = parseFloat(document.getElementById('m-amt-' + emp.emp_id)?.value) || 0;
-      const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
+      const val = Math.round(parseFloat(document.getElementById('m-amt-' + emp.emp_id)?.value) || 0);
+      const existing = this.dateAdvances.find(a => String(a.emp_id) === String(emp.emp_id));
       if (val > 0 && existing) {
-        ops.push(API.call('saveAdvance', { advance_id: existing.advance_id, date, amount: val }));
+        tasks.push(() => API.call('saveAdvance', { advance_id: existing.advance_id, date, amount: val }));
         count++;
       } else if (val > 0) {
-        ops.push(API.call('saveAdvance', { emp_id: emp.emp_id, emp_name: emp.name, date, amount: val, created_by: 'Manager' }));
+        tasks.push(() => API.call('saveAdvance', { emp_id: emp.emp_id, emp_name: emp.name, date, amount: val, created_by: 'Manager' }));
         count++;
       } else if (val === 0 && existing) {
-        ops.push(API.call('deleteAdvance', { advance_id: existing.advance_id }));
+        tasks.push(() => API.call('deleteAdvance', { advance_id: existing.advance_id }));
       }
     }
     if (!count) { toast('Enter at least one amount', 'error'); return; }
     try {
-      await Promise.all(ops);
+      for (const task of tasks) { await task(); }
       await this.loadForDate(date);
       toast(`${count} advance${count > 1 ? 's' : ''} submitted`, 'success');
     } catch(e) { toast(e.message, 'error'); }
@@ -748,35 +750,22 @@ const ManagerApp = {
   savePDF() {
     if (!this.dateAdvances.length) return;
     const { el, date } = this._buildPDFElement();
-    el.style.cssText = 'position:fixed;left:-10000px;top:0;width:680px;background:#ffffff;color:#1e293b;z-index:-1';
-    document.body.appendChild(el);
-    html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, image: { type: 'jpeg', quality: .95 }, html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true }, jsPDF: { unit: 'mm', format: 'a4' } })
-      .from(el).save()
-      .finally(() => document.body.removeChild(el));
+    const company = State.settings?.COMPANY_NAME || 'Mahitha Prasad';
+    const w = window.open('', '_blank');
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Advance Report – ${date}</title>
+      <style>
+        body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#1e293b}
+        @media print{@page{size:A4;margin:18mm}}
+      </style>
+    </head><body>${el.innerHTML}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); }, 400);
   },
 
-  async sharePDF() {
-    if (!this.dateAdvances.length) return;
-    if (!navigator.share) { toast('Sharing not supported on this browser — use Save PDF instead', 'error'); return; }
-    const { el, date } = this._buildPDFElement();
-    el.style.cssText = 'position:fixed;left:-10000px;top:0;width:680px;background:#ffffff;color:#1e293b;z-index:-1';
-    document.body.appendChild(el);
-    try {
-      toast('Generating PDF…');
-      const blob = await html2pdf().set({ margin: 0, filename: `advances-${date}.pdf`, image: { type: 'jpeg', quality: .95 }, html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true }, jsPDF: { unit: 'mm', format: 'a4' } })
-        .from(el).outputPdf('blob');
-      document.body.removeChild(el);
-      const file = new File([blob], `advances-${date}.pdf`, { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: `Advances ${date}` });
-      } else {
-        toast('File sharing not supported — saving instead', 'error');
-        this.savePDF();
-      }
-    } catch(e) {
-      if (document.body.contains(el)) document.body.removeChild(el);
-      if (e.name !== 'AbortError') toast(e.message, 'error');
-    }
+  sharePDF() {
+    this.savePDF();
   }
 };
 
@@ -1013,7 +1002,7 @@ const EmployeeApp = {
               </tr>
             </tbody>
           </table>
-        </div>` : ''}`;
+        </div>` : ''}``;
     } catch(e) { toast(e.message, 'error'); }
   },
 
