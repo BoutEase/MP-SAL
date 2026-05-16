@@ -968,7 +968,7 @@ Views.Payroll = {
           <td style="padding:7px 10px;color:var(--success);font-weight:600">${calcLabel}</td>
           <td style="padding:7px 10px">
             <button class="btn btn-sm" style="background:var(--success);color:#fff;border:none;margin-right:4px"
-              onclick="Views.Payroll.acceptAnomaly(${i}, ${JSON.stringify(a).replace(/"/g,'&quot;')}, parsed_anomaly_${i})">✓ Accept ${calcLabel}</button>
+              onclick="Views.Payroll.acceptAnomaly(${i})">✓ Accept ${calcLabel}</button>
             <button class="btn btn-sm btn-secondary" onclick="Views.Payroll.dismissAnomaly(${i})">Dismiss</button>
           </td>
         </tr>`;
@@ -983,7 +983,7 @@ Views.Payroll = {
           </td>
           <td style="padding:7px 10px">
             <button class="btn btn-sm" style="background:var(--warning);color:#fff;border:none;margin-right:4px"
-              onclick="Views.Payroll.acceptAnomalyManual(${i}, ${JSON.stringify(a).replace(/"/g,'&quot;')})">✓ Apply Hours</button>
+              onclick="Views.Payroll.acceptAnomalyManual(${i})">✓ Apply Hours</button>
             <button class="btn btn-sm btn-secondary" onclick="Views.Payroll.dismissAnomaly(${i})">Dismiss</button>
           </td>
         </tr>`;
