@@ -2850,6 +2850,40 @@ Views.Payments = {
         </div>` : ''}
       </div>
 
+      ${run.some(r => r.net_pay < 0) ? `
+      <div id="pay-neg-banner" style="background:var(--danger-light);border:1px solid var(--danger);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span style="font-size:18px">🚨</span>
+          <strong style="color:var(--danger);font-size:14px">Negative Balance — ${run.filter(r => r.net_pay < 0).length} employee${run.filter(r => r.net_pay < 0).length > 1 ? 's' : ''} owe more than they earned</strong>
+          <span style="flex:1"></span>
+          <button onclick="document.getElementById('pay-neg-banner').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;line-height:1;padding:0">✕</button>
+        </div>
+        <p style="font-size:13px;color:var(--danger);margin:0 0 12px">These employees took advance exceeding their salary. Select a date and convert each to a carried-forward advance — it will be deducted in the next payroll.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;max-width:600px">
+          <thead><tr style="background:rgba(220,53,69,.12)">
+            <th style="padding:7px 10px;text-align:left;color:var(--danger)">Employee</th>
+            <th style="padding:7px 10px;text-align:right;color:var(--danger)">Negative Balance</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--danger)">Advance Date</th>
+            <th style="padding:7px 10px"></th>
+          </tr></thead>
+          <tbody>
+            ${run.map((r, i) => r.net_pay < 0 ? `
+            <tr style="border-top:1px solid rgba(220,53,69,.2)" id="pay-neg-row-${i}">
+              <td style="padding:7px 10px;font-weight:600">${r.emp_name}</td>
+              <td style="padding:7px 10px;text-align:right;font-weight:700;color:var(--danger)">${fmt(Math.abs(r.net_pay))}</td>
+              <td style="padding:7px 10px;text-align:center">
+                <input type="date" id="pay-neg-date-${i}" value="${new Date().toISOString().split('T')[0]}"
+                  style="padding:4px 8px;font-size:12px;width:auto;border-color:var(--danger)" />
+              </td>
+              <td style="padding:7px 10px;text-align:center">
+                <button class="btn btn-sm" style="background:var(--danger);color:#fff;border-color:var(--danger)"
+                  onclick="Views.Payments.convertNegative(${i})">Convert to Advance</button>
+              </td>
+            </tr>` : '').join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
+
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 14px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <strong style="font-size:14px">Payment Run — ${this._month}</strong>
@@ -2878,25 +2912,27 @@ Views.Payments = {
             </thead>
             <tbody>
               ${run.map((r, i) => {
-                const rem = r.remaining;
-                const rowStyle = rem <= 0 ? 'opacity:.55' : '';
+                const isNeg    = r.net_pay < 0;
+                const rem      = r.remaining;
+                const isPaid   = !isNeg && rem <= 0;
+                const rowStyle = isPaid ? 'opacity:.55' : isNeg ? 'background:var(--danger-light)' : '';
                 return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${i}">
                   <td style="padding:10px 8px;text-align:center">
-                    <input type="checkbox" class="pay-chk" data-idx="${i}" ${rem <= 0 ? 'disabled' : ''} />
+                    <input type="checkbox" class="pay-chk" data-idx="${i}" ${(isPaid || isNeg) ? 'disabled' : ''} />
                   </td>
                   <td style="padding:10px 8px;font-weight:500">${r.emp_name}</td>
-                  <td style="padding:10px 8px;text-align:right">${fmt(r.net_pay)}</td>
+                  <td style="padding:10px 8px;text-align:right;${isNeg ? 'color:var(--danger);font-weight:700' : ''}">${fmt(r.net_pay)}</td>
                   <td style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid > 0 ? fmt(r.already_paid) : '—'}</td>
-                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${rem > 0 ? 'var(--danger)' : 'var(--success)'}">
-                    ${rem > 0 ? fmt(rem) : '✓ Paid'}
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg ? 'var(--danger)' : rem > 0 ? 'var(--danger)' : 'var(--success)'}">
+                    ${isNeg ? '⚠ Negative' : rem > 0 ? fmt(rem) : '✓ Paid'}
                   </td>
                   <td style="padding:10px 8px;text-align:right">
-                    <input type="number" id="pay-amt-${i}" value="${rem > 0 ? rem : ''}" min="0"
+                    <input type="number" id="pay-amt-${i}" value="${rem > 0 && !isNeg ? rem : ''}" min="0"
                       style="width:90px;padding:4px 6px;font-size:13px;text-align:right"
-                      ${rem <= 0 ? 'disabled' : ''} />
+                      ${(isPaid || isNeg) ? 'disabled' : ''} />
                   </td>
                   <td style="padding:10px 8px;text-align:center">
-                    <select id="pay-mode-${i}" style="padding:4px 6px;font-size:12px;width:auto" ${rem <= 0 ? 'disabled' : ''}>
+                    <select id="pay-mode-${i}" style="padding:4px 6px;font-size:12px;width:auto" ${(isPaid || isNeg) ? 'disabled' : ''}>
                       <option>UPI</option><option>Cash</option>
                     </select>
                   </td>
@@ -2936,6 +2972,31 @@ Views.Payments = {
           </table>
         </div>
       </div>` : ''}`;
+  },
+
+  async convertNegative(i) {
+    const r    = this._run[i];
+    const date = document.getElementById('pay-neg-date-' + i)?.value;
+    if (!date) { toast('Select a date', 'error'); return; }
+    const amount = Math.abs(r.net_pay);
+    try {
+      await API.call('saveAdvance', {
+        advance_id:  null,
+        emp_id:      r.emp_id,
+        emp_name:    r.emp_name,
+        date,
+        amount,
+        status:      'Approved',
+        created_by:  'Previous Month Bal'
+      });
+      document.getElementById('pay-neg-row-' + i)?.remove();
+      const remaining = document.querySelectorAll('[id^="pay-neg-row-"]').length;
+      if (!remaining) document.getElementById('pay-neg-banner')?.remove();
+      // Grey out the row in the payment run table
+      const row = document.getElementById('payrun-row-' + i);
+      if (row) { row.style.background = ''; row.style.opacity = '.55'; }
+      toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${r.emp_name}`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
   },
 
   toggleAll(checked) {
