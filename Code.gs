@@ -428,6 +428,17 @@ function saveAdvance(data) {
       const idx = rows.findIndex(function(r, i) { return i > 0 && String(r[0]) === String(data.advance_id); });
       if (idx > 0) {
         sheet.getRange(idx + 1, 4, 1, 3).setValues([[dateStr, amount, 'Pending']]);
+      } else {
+        // advance_id not found in sheet — fall back to inserting as a new record
+        var nums2 = rows.slice(1).filter(function(r) { return r[0]; })
+          .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
+        var next2 = (Math.max.apply(null, [0].concat(nums2)) + 1).toString().padStart(5, '0');
+        data.advance_id = 'ADV' + next2;
+        data.created_at = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
+        sheet.appendRow([
+          data.advance_id, data.emp_id, data.emp_name, dateStr,
+          amount, 'Pending', data.created_by || 'Manager', data.created_at
+        ]);
       }
     }
     return { success: true, advance_id: data.advance_id };
