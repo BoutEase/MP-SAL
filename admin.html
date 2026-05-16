@@ -1880,13 +1880,15 @@ Views.Employees = {
           <th style="padding:10px 8px">Petpooja ID</th>
           <th style="padding:10px 8px;text-align:center">Room</th>
           <th style="padding:10px 8px;text-align:center">Bonus</th>
+          <th style="padding:10px 8px;text-align:center">Pay Batch</th>
           <th style="padding:10px 8px;text-align:right">Weekly ₹</th>
           <th style="padding:10px 8px"></th>
         </tr>
       </thead>
       <tbody>${list.map(e => {
-        const hasRoom = e.company_room === 'Yes';
+        const hasRoom  = e.company_room === 'Yes';
         const effective = e.weekly_salary - (hasRoom ? 200 : 0);
+        const isDist   = e.payment_batch === 'Via Distributor';
         return `
         <tr style="border-bottom:1px solid var(--border)">
           <td style="padding:10px 8px;color:var(--muted)">${e.emp_id}</td>
@@ -1899,6 +1901,11 @@ Views.Employees = {
           <td style="padding:10px 8px;text-align:center">${e.bonus_scheme === 'Yes'
             ? `<span class="badge badge-success">Yes</span>`
             : `<span style="color:var(--muted);font-size:12px">No</span>`}</td>
+          <td style="padding:10px 8px;text-align:center">
+            ${isDist
+              ? `<span class="badge badge-warning">Via Distributor</span>`
+              : `<span class="badge badge-primary">Direct</span>`}
+          </td>
           <td style="padding:10px 8px;text-align:right">
             ${fmt(e.weekly_salary)}
             ${hasRoom ? `<br><span style="font-size:11px;color:var(--warning)">Eff. ${fmt(effective)}</span>` : ''}
@@ -1971,6 +1978,12 @@ Views.Employees = {
           </select>
         </div>
         <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${emp.joining_date||''}" /></div>
+        <div class="field"><label>Payment Batch</label>
+          <select id="ef-batch">
+            <option value="Direct" ${(emp.payment_batch||'Direct')==='Direct'?'selected':''}>Direct</option>
+            <option value="Via Distributor" ${emp.payment_batch==='Via Distributor'?'selected':''}>Via Distributor</option>
+          </select>
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-primary btn-sm" onclick="Views.Employees.save('${empId||''}')">Save</button>
@@ -2015,8 +2028,9 @@ Views.Employees = {
       weekly_salary: salary,
       company_room: document.getElementById('ef-room')?.value || '',
       bonus_scheme: document.getElementById('ef-bonus')?.value || '',
-      login_code:   document.getElementById('ef-logincode')?.value.trim(),
-      joining_date: document.getElementById('ef-join')?.value,
+      login_code:    document.getElementById('ef-logincode')?.value.trim(),
+      joining_date:  document.getElementById('ef-join')?.value,
+      payment_batch: document.getElementById('ef-batch')?.value || 'Direct',
       status: 'Active'
     };
     try {
@@ -2763,17 +2777,34 @@ Views.Payments = {
         });
         advances = advRes.data || [];
       }
-      this._advances = advances;
-      this.render(this._run, payRes.data || []);
+      this._advances  = advances;
+      this._payments  = payRes.data || [];
+      this.render(this._run, this._payments);
     } catch(e) { toast(e.message, 'error'); }
   },
 
   render(run, payments) {
     const wrap = document.getElementById('pay-run-wrap');
-    const totalNet  = run.reduce((s, r) => s + r.net_pay, 0);
-    const totalPaid = run.reduce((s, r) => s + r.already_paid, 0);
-    const totalRem  = run.reduce((s, r) => s + Math.max(0, r.remaining), 0);
     const today = new Date().toISOString().split('T')[0];
+
+    // Split run into Direct and Via Distributor based on employee profile
+    const empMap2 = {};
+    State.employees.forEach(e => empMap2[e.emp_id] = e);
+    const directRun = run.filter(r => (empMap2[r.emp_id]?.payment_batch || 'Direct') !== 'Via Distributor');
+    const distRun   = run.filter(r => (empMap2[r.emp_id]?.payment_batch) === 'Via Distributor');
+
+    // Batch payments already recorded (stored as __DIST_BATCH__ pseudo-records)
+    const batchPayments = payments.filter(p => p.emp_id === '__DIST_BATCH__');
+    const batchPaidSoFar = batchPayments.reduce((s, p) => s + Number(p.amount), 0);
+
+    // Distributor batch total — exclude negative net_pay employees
+    const distTotal = distRun.filter(r => r.net_pay > 0).reduce((s, r) => s + r.net_pay, 0);
+    const distOutstanding = Math.max(0, distTotal - batchPaidSoFar);
+
+    // Totals for summary card
+    const totalNet  = run.reduce((s, r) => s + r.net_pay, 0);
+    const totalPaid = run.reduce((s, r) => s + r.already_paid, 0) + batchPaidSoFar;
+    const totalRem  = directRun.reduce((s, r) => s + Math.max(0, r.remaining), 0) + distOutstanding;
 
     // Payroll breakdown totals
     const pr             = this._payroll || [];
@@ -2884,9 +2915,10 @@ Views.Payments = {
         </table>
       </div>` : ''}
 
+      ${directRun.length ? `
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 14px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <strong style="font-size:14px">Payment Run — ${this._month}</strong>
+          <strong style="font-size:14px">💳 Direct Payments — ${this._month}</strong>
           <label style="font-size:13px;color:var(--muted)">Date:
             <input type="date" id="pay-date" value="${today}" style="margin-left:6px;padding:4px 8px;font-size:13px" />
           </label>
@@ -2911,29 +2943,28 @@ Views.Payments = {
               </tr>
             </thead>
             <tbody>
-              ${run.map((r, i) => {
-                const isNeg    = r.net_pay < 0;
-                const rem      = r.remaining;
-                const isPaid   = !isNeg && rem <= 0;
+              ${directRun.map((r, i) => {
+                const isNeg  = r.net_pay < 0;
+                const rem    = r.remaining;
+                const isPaid = !isNeg && rem <= 0;
                 const rowStyle = isPaid ? 'opacity:.55' : isNeg ? 'background:var(--danger-light)' : '';
-                return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${i}">
+                return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${r.emp_id}">
                   <td style="padding:10px 8px;text-align:center">
-                    <input type="checkbox" class="pay-chk" data-idx="${i}" ${(isPaid || isNeg) ? 'disabled' : ''} />
+                    <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
                   </td>
                   <td style="padding:10px 8px;font-weight:500">${r.emp_name}</td>
-                  <td style="padding:10px 8px;text-align:right;${isNeg ? 'color:var(--danger);font-weight:700' : ''}">${fmt(r.net_pay)}</td>
-                  <td style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid > 0 ? fmt(r.already_paid) : '—'}</td>
-                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg ? 'var(--danger)' : rem > 0 ? 'var(--danger)' : 'var(--success)'}">
+                  <td style="padding:10px 8px;text-align:right;${isNeg?'color:var(--danger);font-weight:700':''}">${fmt(r.net_pay)}</td>
+                  <td style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid>0?fmt(r.already_paid):'—'}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg?'var(--danger)':rem>0?'var(--danger)':'var(--success)'}">
                     ${isNeg ? '⚠ Negative' : rem > 0 ? fmt(rem) : '✓ Paid'}
                   </td>
                   <td style="padding:10px 8px;text-align:right">
-                    <input type="number" id="pay-amt-${i}" value="${rem > 0 && !isNeg ? rem : ''}" min="0"
-                      style="width:90px;padding:4px 6px;font-size:13px;text-align:right"
-                      ${(isPaid || isNeg) ? 'disabled' : ''} />
+                    <input type="number" id="pay-amt-${r.emp_id}" value="${rem>0&&!isNeg?rem:''}" min="0"
+                      style="width:90px;padding:4px 6px;font-size:13px;text-align:right" ${(isPaid||isNeg)?'disabled':''} />
                   </td>
                   <td style="padding:10px 8px;text-align:center">
-                    <select id="pay-mode-${i}" style="padding:4px 6px;font-size:12px;width:auto" ${(isPaid || isNeg) ? 'disabled' : ''}>
-                      <option>UPI</option><option>Cash</option>
+                    <select id="pay-mode-${r.emp_id}" style="padding:4px 6px;font-size:12px;width:auto" ${(isPaid||isNeg)?'disabled':''}>
+                      <option>UPI</option><option>Cash</option><option>PhonePe</option>
                     </select>
                   </td>
                 </tr>`;
@@ -2941,9 +2972,86 @@ Views.Payments = {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>` : ''}
 
-      ${payments.length ? `
+      ${distRun.length ? `
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+        <div style="padding:12px 14px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <strong style="font-size:14px">🤝 Via Distributor — ${this._month}</strong>
+          <span style="flex:1"></span>
+          <button class="btn btn-secondary btn-sm" onclick="Views.Payments.downloadDistributorPDF()">↓ PDF List</button>
+        </div>
+        <div style="padding:12px 16px;display:flex;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Batch Total</div>
+            <div style="font-size:18px;font-weight:700">${fmt(distTotal)}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Paid So Far</div>
+            <div style="font-size:18px;font-weight:700;color:var(--success)">${fmt(batchPaidSoFar)}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Outstanding</div>
+            <div style="font-size:18px;font-weight:700;color:${distOutstanding>0?'var(--danger)':'var(--success)'}">
+              ${distOutstanding > 0 ? fmt(distOutstanding) : '✓ Done'}
+            </div>
+          </div>
+          <div style="flex:2;min-width:220px;background:var(--primary-light);border-radius:var(--radius-sm);padding:10px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${distOutstanding<=0?'opacity:.5;pointer-events:none':''}">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">Record Payment</div>
+            <input type="date" id="dist-pay-date" value="${today}" style="padding:4px 8px;font-size:13px;flex:1;min-width:120px" />
+            <input type="number" id="dist-pay-amt" placeholder="Amount" min="1" value="${distOutstanding>0?distOutstanding:''}"
+              style="padding:4px 8px;font-size:13px;width:110px;text-align:right" />
+            <button class="btn btn-primary btn-sm" onclick="Views.Payments.recordBatchPayment()">✓ Record</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead style="background:var(--surface)">
+              <tr>
+                <th style="padding:10px 8px;text-align:left">Employee</th>
+                <th style="padding:10px 8px;text-align:right">Net Pay</th>
+                <th style="padding:10px 8px;text-align:center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${distRun.map(r => {
+                const isNeg  = r.net_pay < 0;
+                const isPaid = !isNeg && r.already_paid >= r.net_pay && r.net_pay > 0;
+                return `<tr style="border-bottom:1px solid var(--border);${isNeg?'background:var(--danger-light)':isPaid?'opacity:.55':''}">
+                  <td style="padding:10px 8px;font-weight:500">${r.emp_name}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:700;${isNeg?'color:var(--danger)':''}">${fmt(r.net_pay)}</td>
+                  <td style="padding:10px 8px;text-align:center">
+                    ${isNeg
+                      ? `<span class="badge badge-danger">⚠ Negative — excluded from batch</span>`
+                      : isPaid
+                        ? `<span class="badge badge-success">✓ Paid</span>`
+                        : `<span class="badge badge-warning">Pending</span>`}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+            <tfoot><tr style="background:var(--surface2)">
+              <td style="padding:9px 10px;font-weight:700">Batch Total (excl. negatives)</td>
+              <td style="padding:9px 10px;text-align:right;font-weight:700">${fmt(distTotal)}</td>
+              <td></td>
+            </tr></tfoot>
+          </table>
+        </div>
+        ${batchPayments.length ? `
+        <div style="padding:12px 14px;border-top:1px solid var(--border);background:var(--surface2)">
+          <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Batch Payment History</div>
+          ${batchPayments.sort((a,b)=>a.date_paid>b.date_paid?-1:1).map(p=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <span style="color:var(--muted)">${p.date_paid}</span>
+            <span style="font-weight:600">${fmt(Number(p.amount))}</span>
+            <span style="color:var(--muted)">· Distributor Batch</span>
+            <span style="flex:1"></span>
+            <button class="btn btn-danger btn-sm" onclick="Views.Payments.remove('${p.payment_id}')">✕</button>
+          </div>`).join('')}
+        </div>` : ''}
+      </div>` : ''}
+
+      ${payments.filter(p => p.emp_id !== '__DIST_BATCH__').length ? `
       <div class="card" style="padding:0;overflow:hidden">
         <div style="padding:12px 14px;background:var(--surface2);font-weight:600;font-size:14px">Payment History — ${this._month}</div>
         <div style="overflow-x:auto">
@@ -2958,7 +3066,7 @@ Views.Payments = {
               </tr>
             </thead>
             <tbody>
-              ${payments.sort((a, b) => a.date_paid > b.date_paid ? -1 : 1).map(p => `
+              ${payments.filter(p=>p.emp_id!=='__DIST_BATCH__').sort((a,b)=>a.date_paid>b.date_paid?-1:1).map(p=>`
               <tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:10px 8px">${p.date_paid}</td>
                 <td style="padding:10px 8px;font-weight:500">${p.emp_name}</td>
@@ -3011,15 +3119,14 @@ Views.Payments = {
 
     const records = [];
     for (const cb of checked) {
-      const i = parseInt(cb.dataset.idx);
-      const emp = this._run[i];
-      const amt = parseFloat(document.getElementById(`pay-amt-${i}`)?.value);
-      const mode = document.getElementById(`pay-mode-${i}`)?.value;
+      const empId = cb.dataset.empid;
+      const emp   = this._run.find(r => r.emp_id === empId);
+      if (!emp) continue;
+      const amt  = parseFloat(document.getElementById(`pay-amt-${empId}`)?.value);
+      const mode = document.getElementById(`pay-mode-${empId}`)?.value;
       if (!amt || amt <= 0) { toast(`Enter a valid amount for ${emp.emp_name}`, 'error'); return; }
-      records.push({
-        emp_id: emp.emp_id, emp_name: emp.emp_name,
-        month: this._month, date_paid: date, amount: amt, mode: mode || 'UPI'
-      });
+      records.push({ emp_id: emp.emp_id, emp_name: emp.emp_name,
+        month: this._month, date_paid: date, amount: amt, mode: mode || 'UPI' });
     }
 
     try {
@@ -3027,6 +3134,84 @@ Views.Payments = {
       toast(`${records.length} payment(s) recorded`, 'success');
       this.onMonthChange(this._month);
     } catch(e) { toast(e.message, 'error'); }
+  },
+
+  async recordBatchPayment() {
+    const date = document.getElementById('dist-pay-date')?.value;
+    const amt  = parseFloat(document.getElementById('dist-pay-amt')?.value);
+    if (!date) { toast('Select a date', 'error'); return; }
+    if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
+
+    const empMap2 = {};
+    State.employees.forEach(e => empMap2[e.emp_id] = e);
+    const distRun     = this._run.filter(r => empMap2[r.emp_id]?.payment_batch === 'Via Distributor');
+    const distTotal   = distRun.filter(r => r.net_pay > 0).reduce((s, r) => s + r.net_pay, 0);
+    const batchPaids  = (this._payments || []).filter(p => p.emp_id === '__DIST_BATCH__');
+    const alreadyPaid = batchPaids.reduce((s, p) => s + Number(p.amount), 0);
+    const newTotal    = alreadyPaid + amt;
+
+    try {
+      // Save the batch payment as one record
+      await API.call('saveBulkPayments', { records: [{
+        emp_id: '__DIST_BATCH__', emp_name: 'Distributor Batch',
+        month: this._month, date_paid: date, amount: amt, mode: 'Distributor Batch'
+      }]});
+
+      // If fully paid, auto-mark all distributor employees as individually paid
+      if (newTotal >= distTotal && distTotal > 0) {
+        const indiv = distRun
+          .filter(r => r.net_pay > 0 && r.already_paid < r.net_pay)
+          .map(r => ({ emp_id: r.emp_id, emp_name: r.emp_name,
+            month: this._month, date_paid: date, amount: r.net_pay - r.already_paid, mode: 'Distributor Batch' }));
+        if (indiv.length) await API.call('saveBulkPayments', { records: indiv });
+        toast(`Batch fully paid — ${indiv.length} employee(s) marked as paid`, 'success');
+      } else {
+        toast(`₹${amt.toLocaleString('en-IN')} recorded · Outstanding: ${fmt(distTotal - newTotal)}`, 'success');
+      }
+      this.onMonthChange(this._month);
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  downloadDistributorPDF() {
+    const empMap2 = {};
+    State.employees.forEach(e => empMap2[e.emp_id] = e);
+    const distRun = this._run.filter(r => empMap2[r.emp_id]?.payment_batch === 'Via Distributor' && r.net_pay > 0);
+    if (!distRun.length) { toast('No distributor employees with positive balance', 'error'); return; }
+    const total = distRun.reduce((s, r) => s + r.net_pay, 0);
+    const rows  = distRun.map(r =>
+      `<tr style="border-bottom:1px solid #e2e8f0">
+        <td style="padding:9px 12px;font-size:14px">${r.emp_name}</td>
+        <td style="padding:9px 12px;text-align:right;font-size:14px;font-weight:600">₹${r.net_pay.toLocaleString('en-IN')}</td>
+      </tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8">
+      <title>Distributor List — ${this._month}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:32px;max-width:500px;margin:0 auto}
+        h2{margin:0 0 4px;font-size:20px}
+        p{margin:0 0 20px;color:#64748b;font-size:13px}
+        table{width:100%;border-collapse:collapse}
+        thead th{padding:9px 12px;text-align:left;background:#f1f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
+        thead th:last-child{text-align:right}
+        tfoot td{padding:10px 12px;font-weight:700;font-size:15px;background:#f1f5f9}
+        tfoot td:last-child{text-align:right}
+        @media print{button{display:none}}
+      </style></head><body>
+      <h2>MP SAL — Distributor Payment List</h2>
+      <p>${this._month} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-IN')}</p>
+      <table>
+        <thead><tr><th>Employee</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td>Total</td><td>₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+      </table>
+      <br><br>
+      <div style="display:flex;justify-content:space-between;margin-top:40px;font-size:13px;color:#64748b">
+        <div>Prepared by: _______________</div>
+        <div>Distributor sign: _______________</div>
+      </div>
+      <br><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer">🖨 Print / Save PDF</button>
+      </body></html>`;
+    const w = window.open('', '_blank', 'width=560,height=700');
+    w.document.write(html); w.document.close();
   },
 
   async remove(paymentId) {
