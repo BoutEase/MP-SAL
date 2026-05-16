@@ -551,16 +551,24 @@ const ManagerApp = {
     this.loadForDate(today);
   },
 
-  async loadForDate(date) {
+  async loadForDate(date, preserveUserInput = true) {
     try {
       const r = await API.call('getAdvances', { start_date: date, end_date: date });
       this.dateAdvances = r.data || [];
-      this.renderInputTable(date);
+      this.renderInputTable(date, preserveUserInput);
       this.renderSubmitted(date);
     } catch(e) { toast(e.message, 'error'); }
   },
 
-  renderInputTable(date) {
+  renderInputTable(date, preserveUserInput = true) {
+    // Save whatever the user has typed so a re-render doesn't wipe it
+    const userValues = {};
+    if (preserveUserInput) {
+      document.querySelectorAll('[id^="m-amt-"]').forEach(input => {
+        userValues[input.id.replace('m-amt-', '')] = input.value;
+      });
+    }
+
     const allEmps = State.employees.filter(e => e.status === 'Active');
     const body = document.getElementById('m-emp-body');
     if (!body) return;
@@ -582,8 +590,13 @@ const ManagerApp = {
       rows += `<tr><td colspan="3" style="padding:8px 12px;background:var(--bg-secondary,#f3f4f6);font-weight:700;font-size:13px;color:var(--muted);letter-spacing:.5px;border-bottom:1px solid var(--border)">${team}</td></tr>`;
       emps.forEach(emp => {
         const existing = this.dateAdvances.find(a => String(a.emp_id) === String(emp.emp_id));
-        const val = existing ? Math.round(existing.amount) : '';
-        const inputStyle = existing
+        const serverVal = existing ? Math.round(existing.amount) : '';
+        // Prefer user-typed value; fall back to server value
+        const val = (userValues[String(emp.emp_id)] !== undefined && userValues[String(emp.emp_id)] !== '')
+          ? userValues[String(emp.emp_id)]
+          : serverVal;
+        const isHighlighted = existing || (val !== '' && val !== 0);
+        const inputStyle = isHighlighted
           ? 'width:110px;text-align:right;padding:6px 8px;border-color:var(--accent);background:var(--accent-light)'
           : 'width:110px;text-align:right;padding:6px 8px';
         rows += `<tr style="border-bottom:1px solid var(--border)">
@@ -698,7 +711,7 @@ const ManagerApp = {
     if (!count) { toast('Enter at least one amount', 'error'); return; }
     try {
       for (const task of tasks) { await task(); }
-      await this.loadForDate(date);
+      await this.loadForDate(date, false);  // false = show fresh server values, discard typed inputs
       toast(`${count} advance${count > 1 ? 's' : ''} submitted`, 'success');
     } catch(e) { toast(e.message, 'error'); }
   },
