@@ -1385,7 +1385,7 @@ Views.Payroll = {
   renderDetailPanel(p, idx) {
     const emp          = State.employees.find(e => e.emp_id === p.emp_id);
     const days         = State.attendanceMap[p.emp_id];
-    const daily        = (emp?.weekly_salary || p.weekly_salary) / 6;
+    const daily        = p.weekly_salary / 6;
     const hourly       = daily / 9;
     const holidayDates = new Set((State.holidays||[]).map(h => h.date));
     const noData       = !days || !days.length;
