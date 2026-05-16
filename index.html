@@ -310,11 +310,11 @@
     </div>
     <div class="card">
       <div class="role-tabs">
-        <div class="role-tab active" id="tab-manager"  onclick="Auth.selectRole('manager')">Manager</div>
-        <div class="role-tab"        id="tab-employee" onclick="Auth.selectRole('employee')">Employee</div>
+        <div class="role-tab"        id="tab-manager"  onclick="Auth.selectRole('manager')">Manager</div>
+        <div class="role-tab active" id="tab-employee" onclick="Auth.selectRole('employee')">Employee</div>
       </div>
       <div class="field">
-        <label id="pin-label">PIN</label>
+        <label id="pin-label">Login Code</label>
         <input type="password" class="pin-input" id="pin-input" maxlength="6" placeholder="••••••"
           onkeydown="if(event.key==='Enter') Auth.login()" />
       </div>
@@ -425,7 +425,7 @@ const App = {
 
 // ---- Auth ----
 const Auth = {
-  selectedRole: 'manager',
+  selectedRole: 'employee',
   selectRole(role) {
     this.selectedRole = role;
     ['manager','employee'].forEach(r => {
