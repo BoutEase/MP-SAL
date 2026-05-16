@@ -57,6 +57,7 @@ function doPost(e) {
       savePayment:     () => savePayment(data),
       deletePayment:   () => deletePayment(data.payment_id),
       getBonusPool:         () => getBonusPool(),
+      confirmBonusPaid:     () => confirmBonusPaid(data),
       saveBonusBalances:    () => saveBonusBalances(data),
       getFinalizedMonths:   () => getFinalizedMonths(),
       getPaymentRun:        () => getPaymentRun(data.month),
@@ -860,7 +861,42 @@ function getBonusPool() {
     };
   });
 
-  return { success: true, data: data };
+  // Pending payouts: rows where payout > 0 and notes does not start with 'paid:'
+  const pending = rows
+    .filter(function(r) { return Number(r[6]) > 0 && !String(r[8] || '').toLowerCase().startsWith('paid:'); })
+    .map(function(r) {
+      return { bonus_id: r[0], emp_id: r[1], emp_name: r[2], month: r[3], payout: Number(r[6]) };
+    });
+
+  return { success: true, data: data, pending: pending };
+}
+
+function confirmBonusPaid(data) {
+  var bonusId = data.bonus_id;
+  var empId   = String(data.emp_id);
+  var today   = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
+
+  // Mark bonus row as paid in notes column
+  var bonusSheet = getSheet('Bonus');
+  var bonusRows  = bonusSheet.getDataRange().getValues();
+  for (var i = 1; i < bonusRows.length; i++) {
+    if (String(bonusRows[i][0]) === String(bonusId)) {
+      bonusSheet.getRange(i + 1, 9).setValue('paid:' + today);
+      break;
+    }
+  }
+
+  // Flip bonus_scheme to No on the employee
+  var empSheet = getSheet('Employees');
+  var empRows  = empSheet.getDataRange().getValues();
+  for (var j = 1; j < empRows.length; j++) {
+    if (String(empRows[j][0]) === empId) {
+      empSheet.getRange(j + 1, 12).setValue('No');
+      break;
+    }
+  }
+
+  return { success: true };
 }
 
 // Upload initial bonus balances from Excel (emp_name + balance columns)

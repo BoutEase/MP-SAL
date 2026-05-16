@@ -2620,10 +2620,40 @@ Views.Bonus = {
     try {
       const r = await API.call('getBonusPool', {});
       const list = r.data || [];
+      const pending = r.pending || [];
       const target = parseInt(State.settings.BONUS_POOL_TARGET || 24000);
-      if (!list.length) { document.getElementById('bonus-list').innerHTML = '<p style="color:var(--muted)">No bonus pool data yet.</p>'; return; }
-      document.getElementById('bonus-list').innerHTML = `
-        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+
+      let html = '';
+
+      if (pending.length) {
+        html += `<div style="background:var(--warning-bg,#fffbeb);border:1px solid var(--warning);border-radius:10px;padding:16px;margin-bottom:20px">
+          <div style="font-weight:700;color:var(--warning);margin-bottom:10px">⚠ Pending Bonus Payouts — Confirm when cash is handed over</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="color:var(--muted)">
+              <th style="padding:6px 8px;text-align:left">Employee</th>
+              <th style="padding:6px 8px;text-align:left">Month</th>
+              <th style="padding:6px 8px;text-align:right">Amount</th>
+              <th style="padding:6px 8px"></th>
+            </tr></thead>
+            <tbody>${pending.map(p => `
+              <tr id="pending-bon-${p.bonus_id}" style="border-top:1px solid var(--border)">
+                <td style="padding:8px;font-weight:600">${p.emp_name}</td>
+                <td style="padding:8px;color:var(--muted)">${p.month}</td>
+                <td style="padding:8px;text-align:right;font-weight:700;color:var(--success)">${fmt(p.payout)}</td>
+                <td style="padding:8px;text-align:right">
+                  <button class="btn btn-sm" style="background:var(--success);color:#fff;border:none"
+                    onclick="Views.Bonus.confirmPaid('${p.bonus_id}','${p.emp_id}','${p.emp_name}')">✓ Confirm Paid</button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      }
+
+      if (!list.length) {
+        html += '<p style="color:var(--muted)">No bonus pool data yet.</p>';
+      } else {
+        html += `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead style="background:var(--surface2)">
             <tr><th style="padding:10px 8px;text-align:left">Employee</th>
             <th style="padding:10px 8px;text-align:right">Balance</th>
@@ -2647,6 +2677,9 @@ Views.Bonus = {
             </tr>`;
           }).join('')}
           </tbody></table></div>`;
+      }
+
+      document.getElementById('bonus-list').innerHTML = html;
     } catch(e) { toast(e.message, 'error'); }
   },
 
@@ -2686,6 +2719,20 @@ Views.Bonus = {
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
+  },
+
+  async confirmPaid(bonusId, empId, empName) {
+    if (!confirm(`Confirm that ₹ bonus payout has been handed to ${empName}?\n\nThis will:\n• Mark this payout as paid\n• Set ${empName}'s bonus scheme to No`)) return;
+    try {
+      await API.call('confirmBonusPaid', { bonus_id: bonusId, emp_id: empId });
+      // Remove from pending list
+      const row = document.getElementById(`pending-bon-${bonusId}`);
+      if (row) row.remove();
+      // Update State.employees so employee edit form reflects change
+      const emp = State.employees.find(e => e.emp_id === empId);
+      if (emp) emp.bonus_scheme = 'No';
+      toast(`${empName} bonus confirmed paid — bonus scheme set to No`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
   }
 };
 
