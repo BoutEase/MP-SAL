@@ -484,13 +484,16 @@ const Parser = {
         days: []
       };
 
-      // Scan next 15 rows for Day / Status / Total Hrs
-      let dayRow = null, statusRow = null, hrsRow = null;
-      for (let j = i + 1; j < Math.min(i + 18, rows.length); j++) {
-        const lbl = String(rows[j][0] || '').trim();
-        if (lbl === 'Day')       dayRow    = rows[j];
-        if (lbl === 'Status')    statusRow = rows[j];
-        if (lbl === 'Total Hrs') { hrsRow  = rows[j]; break; }
+      // Scan next 18 rows for Day / Status / Total Hrs / In Time / Out Time
+      let dayRow = null, statusRow = null, hrsRow = null, inRow = null, outRow = null;
+      for (let j = i + 1; j < Math.min(i + 22, rows.length); j++) {
+        const lbl = String(rows[j][0] || '').trim().toLowerCase();
+        if (lbl === 'day')                                   dayRow    = rows[j];
+        if (lbl === 'status')                                statusRow = rows[j];
+        if (lbl === 'total hrs' || lbl === 'total hours')   hrsRow    = rows[j];
+        if (lbl === 'in time'   || lbl === 'punch in'  || lbl === 'first in')  inRow  = rows[j];
+        if (lbl === 'out time'  || lbl === 'punch out' || lbl === 'last out')  outRow = rows[j];
+        if (hrsRow && inRow && outRow) break;
       }
 
       if (dayRow && statusRow && hrsRow) {
@@ -500,9 +503,11 @@ const Parser = {
           if (!dm) continue;
 
           const dayNum  = parseInt(dm[1]);
-          const dayName = dm[2]; // Sunday, Monday, …
+          const dayName = dm[2];
           const status  = String(statusRow[d] || '').trim();
           const hrsStr  = String(hrsRow[d] || '').trim();
+          const inStr   = inRow  ? String(inRow[d]  || '').trim() : '';
+          const outStr  = outRow ? String(outRow[d] || '').trim() : '';
 
           let totalHours = 0;
           if (hrsStr && hrsStr !== '-') {
@@ -513,6 +518,7 @@ const Parser = {
           const month = emp.month;
           emp.days.push({
             day: dayNum, dayName, status, totalHours,
+            punchIn: inStr, punchOut: outStr,
             date: month + '-' + String(dayNum).padStart(2, '0')
           });
         }
@@ -520,6 +526,56 @@ const Parser = {
       }
     }
     return employees;
+  }
+};
+
+// ============================================================
+// ATTENDANCE ANOMALY DETECTOR
+// ============================================================
+const AnomalyDetector = {
+  // Parse "HH:MM AM/PM" or "HH:MM" into decimal hours
+  parseTime(str) {
+    if (!str) return null;
+    const m = str.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (!m) return null;
+    let h = parseInt(m[1]), min = parseInt(m[2]);
+    const ampm = (m[3] || '').toUpperCase();
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h + min / 60;
+  },
+
+  // Calculate hours from punch in/out, respecting 5 AM next-day boundary
+  calcHoursFromPunch(inStr, outStr) {
+    const inH  = this.parseTime(inStr);
+    const outH = this.parseTime(outStr);
+    if (inH === null || outH === null) return null;
+    let diff = outH - inH;
+    // If out < in or out is before 5 AM, treat as next-day punch out
+    if (diff <= 0 || outH < 5) diff += 24;
+    return diff;
+  },
+
+  detect(parsedEmployees) {
+    const anomalies = []; // { empName, date, day, punchIn, punchOut, calcHours, type }
+    for (const emp of parsedEmployees) {
+      for (const day of emp.days) {
+        if (day.status !== 'Absent') continue;
+        const hasIn  = !!day.punchIn;
+        const hasOut = !!day.punchOut;
+        if (!hasIn && !hasOut) continue;
+
+        if (hasIn && hasOut) {
+          const calcHours = this.calcHoursFromPunch(day.punchIn, day.punchOut);
+          anomalies.push({ empName: emp.name, petpooja_id: emp.petpooja_id, date: day.date, day: day.day, dayName: day.dayName,
+            punchIn: day.punchIn, punchOut: day.punchOut, calcHours, type: 'both' });
+        } else {
+          anomalies.push({ empName: emp.name, petpooja_id: emp.petpooja_id, date: day.date, day: day.day, dayName: day.dayName,
+            punchIn: day.punchIn || '', punchOut: day.punchOut || '', calcHours: null, type: 'partial' });
+        }
+      }
+    }
+    return anomalies;
   }
 };
 
@@ -779,6 +835,7 @@ Views.Payroll = {
         <span style="font-size:12px;color:var(--muted);padding-bottom:6px">Only <strong>Approved</strong> advances in this date range are deducted from salary</span>
       </div>
     </div>
+    <div id="payroll-anomalies"></div>
     <div id="payroll-unmatched"></div>
     <div id="payroll-banner-wrap"></div>
     <div id="payroll-table-wrap"><p style="color:var(--muted);font-size:14px">Upload a Petpooja Excel to calculate payroll, or load saved draft below.</p></div>
@@ -865,10 +922,14 @@ Views.Payroll = {
         State.payroll = matched;
         State.unmatchedAttendance = unmatched;
 
+        // Detect attendance anomalies
+        const anomalies = AnomalyDetector.detect(parsed);
+        this.renderAnomalies(anomalies, parsed);
+
         this.renderUnmatched(unmatched);
         this.renderTable(matched);
         if (matched.length) {
-          toast(`Calculated payroll for ${matched.length} employee(s) — ${unmatched.length} unmatched`, 'success');
+          toast(`Calculated payroll for ${matched.length} employee(s) — ${unmatched.length} unmatched${anomalies.length ? ` — ${anomalies.length} anomaly(s) detected` : ''}`, 'success');
           // Persist attendance_json even for finalized months so Detail view works after reload
           this._patchAttendanceJson();
         } else {
@@ -888,6 +949,143 @@ Views.Payroll = {
       .map(p => ({ emp_id: p.emp_id, month: p.month, attendance_json: JSON.stringify(State.attendanceMap[p.emp_id]) }));
     if (!records.length) return;
     try { await API.call('patchAttendanceJson', { records }); } catch(e) { /* silent */ }
+  },
+
+  renderAnomalies(anomalies, parsed) {
+    const c = document.getElementById('payroll-anomalies');
+    if (!c) return;
+    if (!anomalies.length) { c.innerHTML = ''; return; }
+    const rows = anomalies.map((a, i) => {
+      const calcLabel = a.calcHours !== null ? `${Math.floor(a.calcHours)}h ${Math.round((a.calcHours % 1) * 60)}m` : '—';
+      if (a.type === 'both') {
+        return `<tr id="anom-row-${i}" style="border-top:1px solid rgba(220,53,69,.2)">
+          <td style="padding:7px 10px;font-weight:600">${a.empName}</td>
+          <td style="padding:7px 10px">${a.date} (${a.dayName})</td>
+          <td style="padding:7px 10px">${a.punchIn} → ${a.punchOut}</td>
+          <td style="padding:7px 10px;color:var(--success);font-weight:600">${calcLabel}</td>
+          <td style="padding:7px 10px">
+            <button class="btn btn-sm" style="background:var(--success);color:#fff;border:none;margin-right:4px"
+              onclick="Views.Payroll.acceptAnomaly(${i}, ${JSON.stringify(a).replace(/"/g,'&quot;')}, parsed_anomaly_${i})">✓ Accept ${calcLabel}</button>
+            <button class="btn btn-sm btn-secondary" onclick="Views.Payroll.dismissAnomaly(${i})">Dismiss</button>
+          </td>
+        </tr>`;
+      } else {
+        return `<tr id="anom-row-${i}" style="border-top:1px solid rgba(220,53,69,.2)">
+          <td style="padding:7px 10px;font-weight:600">${a.empName}</td>
+          <td style="padding:7px 10px">${a.date} (${a.dayName})</td>
+          <td style="padding:7px 10px">${a.punchIn ? '🟢 In: ' + a.punchIn : ''}${a.punchOut ? ' 🔴 Out: ' + a.punchOut : ''} <span style="color:var(--danger)">(incomplete)</span></td>
+          <td style="padding:7px 10px">
+            <input type="number" id="anom-hrs-${i}" placeholder="hours" min="0" max="24" step="0.5"
+              style="width:80px;padding:4px 6px;font-size:12px;margin-right:4px" />
+          </td>
+          <td style="padding:7px 10px">
+            <button class="btn btn-sm" style="background:var(--warning);color:#fff;border:none;margin-right:4px"
+              onclick="Views.Payroll.acceptAnomalyManual(${i}, ${JSON.stringify(a).replace(/"/g,'&quot;')})">✓ Apply Hours</button>
+            <button class="btn btn-sm btn-secondary" onclick="Views.Payroll.dismissAnomaly(${i})">Dismiss</button>
+          </td>
+        </tr>`;
+      }
+    }).join('');
+
+    c.innerHTML = `
+      <div style="background:var(--danger-light,#fef2f2);border:1px solid var(--danger);border-radius:8px;padding:14px 16px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span style="font-size:18px">⚠️</span>
+          <strong style="color:var(--danger);font-size:14px">Attendance Anomalies — ${anomalies.length} day${anomalies.length > 1 ? 's' : ''} flagged</strong>
+          <span style="flex:1"></span>
+          <button onclick="document.getElementById('payroll-anomalies').innerHTML=''" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;line-height:1;padding:0">✕</button>
+        </div>
+        <p style="font-size:13px;color:var(--danger);margin:0 0 12px">Employees marked Absent but have punch records. Possible correction entry error in Petpooja.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:rgba(220,53,69,.1)">
+            <th style="padding:7px 10px;text-align:left;color:var(--danger)">Employee</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--danger)">Date</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--danger)">Punch Times</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--danger)">Calc Hours</th>
+            <th style="padding:7px 10px"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+    // Store anomalies for use in accept handlers
+    this._anomalies = anomalies;
+    this._parsedForAnomalies = parsed;
+  },
+
+  acceptAnomaly(idx, anomaly) {
+    const a = this._anomalies[idx];
+    if (!a || a.calcHours === null) return;
+    // Find the employee in parsed data and fix the day
+    const emp = this._parsedForAnomalies.find(e => e.petpooja_id === a.petpooja_id || e.name === a.empName);
+    if (!emp) { toast('Employee not found in parsed data', 'error'); return; }
+    const day = emp.days.find(d => d.date === a.date);
+    if (!day) { toast('Day not found', 'error'); return; }
+    // Apply corrected hours — status becomes FD or HD based on hours
+    day.totalHours = a.calcHours;
+    day.status = a.calcHours >= 4 ? (a.calcHours >= 9 ? 'FD' : 'HD') : 'Absent';
+    // Recalculate payroll for this employee
+    const dbEmp = State.employees.find(e => {
+      const pid = String(e.petpooja_id || '').trim();
+      return pid && pid === String(a.petpooja_id).trim();
+    }) || State.employees.find(e => e.name === a.empName);
+    if (dbEmp) {
+      const advances = State.advances.filter(adv => String(adv.emp_id).trim() === String(dbEmp.emp_id).trim());
+      const newRec = Calc.run(emp, dbEmp, advances, State.holidays, State.settings);
+      const pi = State.payroll.findIndex(p => p.emp_id === dbEmp.emp_id);
+      if (pi >= 0) {
+        newRec.payroll_id = State.payroll[pi].payroll_id;
+        newRec.status = State.payroll[pi].status;
+        newRec.adv_start_date = State.payroll[pi].adv_start_date;
+        newRec.adv_end_date = State.payroll[pi].adv_end_date;
+        State.payroll[pi] = newRec;
+        State.attendanceMap[dbEmp.emp_id] = emp.days;
+      }
+      this.renderTable(State.payroll);
+    }
+    this.dismissAnomaly(idx);
+    toast(`${a.empName} ${a.date} corrected to ${day.status} (${a.calcHours.toFixed(1)}h)`, 'success');
+  },
+
+  acceptAnomalyManual(idx, anomaly) {
+    const a = this._anomalies[idx];
+    if (!a) return;
+    const hrs = parseFloat(document.getElementById(`anom-hrs-${idx}`)?.value);
+    if (!hrs || hrs <= 0) { toast('Enter valid hours', 'error'); return; }
+    const emp = this._parsedForAnomalies.find(e => e.petpooja_id === a.petpooja_id || e.name === a.empName);
+    if (!emp) { toast('Employee not found', 'error'); return; }
+    const day = emp.days.find(d => d.date === a.date);
+    if (!day) { toast('Day not found', 'error'); return; }
+    day.totalHours = hrs;
+    day.status = hrs >= 4 ? (hrs >= 9 ? 'FD' : 'HD') : 'Absent';
+    const dbEmp = State.employees.find(e => {
+      const pid = String(e.petpooja_id || '').trim();
+      return pid && pid === String(a.petpooja_id).trim();
+    }) || State.employees.find(e => e.name === a.empName);
+    if (dbEmp) {
+      const advances = State.advances.filter(adv => String(adv.emp_id).trim() === String(dbEmp.emp_id).trim());
+      const newRec = Calc.run(emp, dbEmp, advances, State.holidays, State.settings);
+      const pi = State.payroll.findIndex(p => p.emp_id === dbEmp.emp_id);
+      if (pi >= 0) {
+        newRec.payroll_id = State.payroll[pi].payroll_id;
+        newRec.status = State.payroll[pi].status;
+        newRec.adv_start_date = State.payroll[pi].adv_start_date;
+        newRec.adv_end_date = State.payroll[pi].adv_end_date;
+        State.payroll[pi] = newRec;
+        State.attendanceMap[dbEmp.emp_id] = emp.days;
+      }
+      this.renderTable(State.payroll);
+    }
+    this.dismissAnomaly(idx);
+    toast(`${a.empName} ${a.date} corrected to ${day.status} (${hrs}h)`, 'success');
+  },
+
+  dismissAnomaly(idx) {
+    const row = document.getElementById(`anom-row-${idx}`);
+    if (row) row.remove();
+    // If no rows left, remove the whole banner
+    const tbody = document.querySelector('#payroll-anomalies tbody');
+    if (tbody && !tbody.querySelector('tr')) document.getElementById('payroll-anomalies').innerHTML = '';
   },
 
   renderUnmatched(list) {
