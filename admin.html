@@ -1723,11 +1723,11 @@ Views.Employees = {
 
   filter() {
     const q    = document.getElementById('emp-search')?.value.toLowerCase() || '';
-    const team = document.getElementById('emp-team')?.value || '';
+    const team = document.getElementById('emp-team')?.value.trim().toLowerCase() || '';
     this._filtered = State.employees.filter(e =>
       e.status === 'Active' &&
-      (!q || e.name.toLowerCase().includes(q) || e.emp_id.toLowerCase().includes(q)) &&
-      (!team || e.team === team)
+      (!q || e.name.toLowerCase().includes(q) || String(e.emp_id).toLowerCase().includes(q)) &&
+      (!team || (e.team || '').trim().toLowerCase() === team)
     );
     this.renderList(this._filtered);
   },
