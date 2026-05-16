@@ -693,6 +693,16 @@ function finalizePayroll(data) {
     const empCont = Number(payrollRows[i][20]);
 
     if (eligible && empCont > 0) {
+      // Check if a bonus row already exists for this emp_id + month (handles reopen & re-finalize)
+      const existingBonusRows = bonusSheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
+      const alreadyExists = existingBonusRows.some(function(r) {
+        var bMonth = r[3] instanceof Date
+          ? Utilities.formatDate(r[3], 'Asia/Kolkata', 'yyyy-MM')
+          : String(r[3]).substring(0, 7);
+        return String(r[1]) === String(empId) && bMonth === month;
+      });
+      if (alreadyExists) continue;
+
       const prevBal = balanceMap[empId] || 0;
       const added = empCont + companyCont;
       let newBal = prevBal + added;
@@ -704,8 +714,7 @@ function finalizePayroll(data) {
       }
       balanceMap[empId] = newBal;
 
-      const bonusNums = bonusSheet.getDataRange().getValues().slice(1)
-        .filter(function(r) { return r[0]; })
+      const bonusNums = existingBonusRows
         .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
       const nextBon = (Math.max.apply(null, [0].concat(bonusNums)) + 1).toString().padStart(5, '0');
 
