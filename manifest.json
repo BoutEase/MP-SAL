@@ -1,12 +1,12 @@
 {
-  "name": "Mahitha Prasad Payroll",
-  "short_name": "MP-SAL",
-  "description": "Payroll management for Mahitha Prasad fashion label",
+  "name": "MP SAL Payroll",
+  "short_name": "MP SAL",
+  "description": "Payroll management for Mahitha Prasad Fashion Label",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#2563eb",
+  "background_color": "#ffffff",
+  "theme_color": "#00D4D4",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }
