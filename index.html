@@ -581,14 +581,17 @@ const ManagerApp = {
       if (!emps.length) return;
       rows += `<tr><td colspan="3" style="padding:8px 12px;background:var(--bg-secondary,#f3f4f6);font-weight:700;font-size:13px;color:var(--muted);letter-spacing:.5px;border-bottom:1px solid var(--border)">${team}</td></tr>`;
       emps.forEach(emp => {
-        const existing = this.dateAdvances.find(a => a.emp_id === emp.emp_id);
-        const val = existing ? existing.amount : '';
+        const existing = this.dateAdvances.find(a => String(a.emp_id) === String(emp.emp_id));
+        const val = existing ? Math.round(existing.amount) : '';
+        const inputStyle = existing
+          ? 'width:110px;text-align:right;padding:6px 8px;border-color:var(--accent);background:var(--accent-light)'
+          : 'width:110px;text-align:right;padding:6px 8px';
         rows += `<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:10px 12px;color:var(--muted);font-size:13px">${emp.petpooja_id||'—'}</td>
           <td style="padding:10px 12px;font-weight:500">${emp.name}</td>
           <td style="padding:8px 12px;text-align:right">
             <input type="number" id="m-amt-${emp.emp_id}" value="${val}" placeholder="—"
-              min="0" style="width:110px;text-align:right;padding:6px 8px" />
+              min="0" style="${inputStyle}" title="${existing ? 'Existing advance — edit to change' : ''}" />
           </td>
         </tr>`;
       });
@@ -603,7 +606,7 @@ const ManagerApp = {
 
     // Enrich with employee data and group by team
     const enriched = this.dateAdvances.map(a => {
-      const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+      const emp = State.employees.find(e => String(e.emp_id) === String(a.emp_id)) || {};
       return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
     });
     const teams = [...new Set(enriched.map(a => a.team))].sort();
@@ -704,7 +707,7 @@ const ManagerApp = {
     const date    = document.getElementById('m-date')?.value || this.dateAdvances[0]?.date;
     const company = State.settings?.COMPANY_NAME || 'Mahitha Prasad';
     const enriched = this.dateAdvances.map(a => {
-      const emp = State.employees.find(e => e.emp_id === a.emp_id) || {};
+      const emp = State.employees.find(e => String(e.emp_id) === String(a.emp_id)) || {};
       return Object.assign({}, a, { petpooja_id: emp.petpooja_id || '—', team: emp.team || 'Other' });
     });
     const teams = [...new Set(enriched.map(a => a.team))].sort();
