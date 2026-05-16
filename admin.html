@@ -522,6 +522,8 @@ const Parser = {
             date: month + '-' + String(dayNum).padStart(2, '0')
           });
         }
+        // Skip terminated employees — Petpooja appends "(Terminated)" to name
+        if (emp.name.toLowerCase().includes('terminated')) continue;
         employees.push(emp);
       }
     }
