@@ -484,6 +484,12 @@ function show(id) {
 }
 
 function fmt(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+function fmtDate(d) {
+  if (!d) return '—';
+  const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const p = String(d).substring(0,10).split('-');
+  return p.length === 3 ? `${p[2]}-${m[parseInt(p[1],10)-1]}-${p[0]}` : String(d);
+}
 function fmtHrs(mins) {
   const h = Math.floor(Math.abs(mins) / 60), m = Math.abs(mins) % 60;
   return (mins < 0 ? '-' : '') + h + 'h' + (m ? ' ' + m + 'm' : '');
@@ -851,9 +857,9 @@ const EmployeeApp = {
         return;
       }
       pane.innerHTML = periods.map(period => {
-        const startLabel = (period.adv_start_date || '').substring(0, 10);
-        const endLabel   = (period.adv_end_date   || '').substring(0, 10);
-        const periodLabel = startLabel && endLabel ? `${startLabel} to ${endLabel}` : period.month;
+        const startLabel = fmtDate(period.adv_start_date);
+        const endLabel   = fmtDate(period.adv_end_date);
+        const periodLabel = period.adv_start_date && period.adv_end_date ? `${startLabel} to ${endLabel}` : period.month;
         // Use fetched advances if available; fall back to stored total from payroll record
         const displayTotal = period.advances.length ? period.total : (period.total_from_payroll || 0);
         if (!period.advances.length) {
@@ -885,7 +891,7 @@ const EmployeeApp = {
               <th style="padding:8px 14px;text-align:right;font-size:12px;color:var(--muted);font-weight:600">Amount</th>
             </tr></thead>
             <tbody>${period.advances.map(a => `<tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 14px">${a.date}</td>
+              <td style="padding:10px 14px">${fmtDate(a.date)}</td>
               <td style="padding:10px 14px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td>
             </tr>`).join('')}</tbody>
           </table>
@@ -923,7 +929,7 @@ const EmployeeApp = {
       const newBonusBal = bonus_balance + bonusAdd;
 
       const periodLabel = p.adv_start_date && p.adv_end_date
-        ? `${p.adv_start_date} to ${p.adv_end_date}`
+        ? `${fmtDate(p.adv_start_date)} to ${fmtDate(p.adv_end_date)}`
         : '—';
 
       slip.innerHTML = `
@@ -1008,7 +1014,7 @@ const EmployeeApp = {
             </thead>
             <tbody>
               ${advances.map(a => `<tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:9px 10px">${a.date}</td>
+                <td style="padding:9px 10px">${fmtDate(a.date)}</td>
                 <td style="padding:9px 10px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
               </tr>`).join('')}
               <tr style="background:var(--surface2)">
@@ -1050,7 +1056,7 @@ const EmployeeApp = {
     const companyCont = parseInt(State.settings.COMPANY_CONTRIBUTION || 500);
     const bonusAdd    = p.bonus_eligible ? (bonusCut + companyCont) : 0;
     const newBonusBal = (bonus_balance || 0) + bonusAdd;
-    const period     = p.adv_start_date && p.adv_end_date ? `${p.adv_start_date} → ${p.adv_end_date}` : '—';
+    const period     = p.adv_start_date && p.adv_end_date ? `${fmtDate(p.adv_start_date)} → ${fmtDate(p.adv_end_date)}` : '—';
     const html = `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
         <div><div style="font-size:22px;font-weight:700">${State.empName}</div>
@@ -1083,7 +1089,7 @@ const EmployeeApp = {
       ${advances.length ? `<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:8px">Advance Details</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left">Date</th><th style="padding:8px 10px;text-align:right">Amount</th></tr></thead>
-          <tbody>${advances.map(a => `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px 10px">${a.date}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td></tr>`).join('')}
+          <tbody>${advances.map(a => `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px 10px">${fmtDate(a.date)}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td></tr>`).join('')}
           <tr style="background:#f1f5f9"><td style="padding:8px 10px;font-weight:700">Total Deducted</td><td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td></tr></tbody>
         </table></div>` : ''}
     </div>`;

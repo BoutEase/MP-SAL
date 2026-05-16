@@ -124,8 +124,8 @@ function getEmployeePayslip(data) {
       .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
     if (bonusRows.length) {
       // Take the row with the latest month
-      bonusRows.sort(function(a, b) { return String(a[2]) > String(b[2]) ? 1 : -1; });
-      bonusBalance = Number(bonusRows[bonusRows.length - 1][6]) || 0;
+      bonusRows.sort(function(a, b) { return String(a[3]) > String(b[3]) ? 1 : -1; });
+      bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
     }
   } catch(e) {}
 
@@ -231,7 +231,7 @@ function initSheets() {
     Holidays:  ['date','name'],
     Payroll:   ['payroll_id','emp_id','month','full_days','half_days','absent_days','week_off_days','holiday_absent_days','ot_weekday_min','ot_sunday_min','ot_holiday_min','shortfall_min','weekly_salary','daily_rate','hourly_rate','TD','gross_pay','ot_earnings','shortfall_deduction','bonus_eligible','bonus_cut','total_advances','net_pay','status','finalized_date','notes','adv_start_date','adv_end_date','attendance_json'],
     Advances:  ['advance_id','emp_id','emp_name','date','amount','status','created_by','created_at'],
-    Bonus:     ['bonus_id','emp_id','month','eligible','contribution','payout','balance_after','notes'],
+    Bonus:     ['bonus_id','emp_id','emp_name','month','eligible','contribution','payout','balance_after','notes'],
     Payments:  ['payment_id','emp_id','emp_name','month','date_paid','amount','mode','notes'],
     Settings:  ['key','value']
   };
@@ -632,7 +632,13 @@ function finalizePayroll(data) {
 
   const bonusRows = bonusSheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
   const balanceMap = {};
-  bonusRows.forEach(function(r) { balanceMap[r[1]] = Number(r[6]); });
+  bonusRows.forEach(function(r) { balanceMap[r[1]] = Number(r[7]); });
+
+  // Build emp_id -> name lookup
+  const empSheet = getSheet('Employees');
+  const empRows = empSheet.getDataRange().getValues().slice(1);
+  const empNameMap = {};
+  empRows.forEach(function(r) { if (r[0]) empNameMap[String(r[0])] = r[1]; });
 
   const payrollRows = payrollSheet.getDataRange().getValues();
   var count = 0;
@@ -670,7 +676,8 @@ function finalizePayroll(data) {
         .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
       const nextBon = (Math.max.apply(null, [0].concat(bonusNums)) + 1).toString().padStart(5, '0');
 
-      bonusSheet.appendRow(['BON' + nextBon, empId, month, 'Y', added, payout, newBal, '']);
+      var empName = empNameMap[String(empId)] || '';
+      bonusSheet.appendRow(['BON' + nextBon, empId, empName, month, 'Y', added, payout, newBal, '']);
     }
   }
 
@@ -796,8 +803,8 @@ function getBonusPool() {
   const latest = {};
   rows.forEach(function(r) {
     const empId = r[1];
-    if (!latest[empId] || r[2] > latest[empId].month) {
-      latest[empId] = { month: r[2], balance: Number(r[6]), last_payout: Number(r[5]) };
+    if (!latest[empId] || r[3] > latest[empId].month) {
+      latest[empId] = { month: r[3], balance: Number(r[7]), last_payout: Number(r[6]) };
     }
   });
 
@@ -837,11 +844,12 @@ function saveBonusBalances(data) {
   records.forEach(function(rec) {
     var empId = rec.emp_id || empByName[norm(rec.emp_name)] || null;
     if (!empId) { skipped++; return; }
+    var empNameVal = rec.emp_name || '';
     var balance = Number(rec.balance) || 0;
     nextNum++;
     bonusSheet.appendRow([
       'BON' + String(nextNum).padStart(5, '0'),
-      empId, 'initial', 'Y', 0, 0, balance, 'uploaded'
+      empId, empNameVal, 'initial', 'Y', 0, 0, balance, 'uploaded'
     ]);
     saved++;
   });
