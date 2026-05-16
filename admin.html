@@ -1528,16 +1528,22 @@ Views.Payroll = {
         newRec.adv_end_date   = p.adv_end_date;
         State.payroll[i] = newRec;
       } else {
-        // No attendance data — update salary-derived fields only
+        // No attendance data — update salary-derived and bonus fields from current employee record
         const effectiveWeekly = emp.weekly_salary - (emp.company_room === 'Yes' ? 200 : 0);
         const daily  = effectiveWeekly / 6;
         const hourly = daily / 9;
+        const bonusMinDays = parseInt(State.settings.BONUS_ELIGIBILITY_MIN_DAYS || 6);
+        const empContrib   = parseInt(State.settings.EMPLOYEE_CONTRIBUTION || 500);
+        const workDays     = (p.full_days || 0) + (p.half_days || 0);
+        const bonusElig    = emp.bonus_scheme === 'Yes' && workDays >= bonusMinDays;
         p.weekly_salary         = effectiveWeekly;
         p.daily_rate            = Math.round(daily * 100) / 100;
         p.hourly_rate           = Math.round(hourly * 100) / 100;
         p.gross_pay             = Math.round(p.TD * daily);
         p.ot_earnings           = Math.round((p.ot_weekday_min + p.ot_sunday_min + p.ot_holiday_min) / 60 * hourly);
         p.shortfall_deduction   = Math.round(p.shortfall_min / 60 * hourly);
+        p.bonus_eligible        = bonusElig;
+        p.bonus_cut             = bonusElig ? empContrib : 0;
         p.net_pay               = Math.round(p.gross_pay + p.ot_earnings - p.shortfall_deduction - p.bonus_cut - p.total_advances);
       }
       count++;
