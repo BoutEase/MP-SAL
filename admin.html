@@ -1032,13 +1032,16 @@ Views.Payroll = {
           ${p.total_advances === 0 && p.status !== 'finalized' ? `<br><a href="javascript:void(0)" style="font-size:10px;color:var(--primary)" onclick="Views.Payroll.debugAdvances('${p.emp_id}')">check advances</a>` : ''}
         </td>
         <td style="padding:10px 8px;text-align:right;color:var(--warning)">${p.bonus_cut > 0 ? '-'+fmt(p.bonus_cut) : '—'}</td>
-        <td style="padding:10px 8px;text-align:right;font-weight:700">${fmt(p.net_pay)}</td>
+        <td style="padding:10px 8px;text-align:right;font-weight:700;${p.net_pay < 0 ? 'color:var(--danger)' : ''}">
+          ${p.net_pay < 0 ? '⚠ ' : ''}${fmt(p.net_pay)}
+        </td>
         <td style="padding:10px 8px;text-align:center"><span class="badge badge-${p.status==='finalized'?'success':'warning'}">${p.status}</span></td>
         <td style="padding:10px 8px;text-align:center;display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.toggleDetail(${idx})">Detail</button>
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.editRow(${idx})" ${p.status==='finalized'?'disabled':''}>Edit</button>
           <button class="btn btn-primary btn-sm" onclick="Views.Payroll.downloadPayslip(${idx})">↓ Slip</button>
           <button class="btn btn-secondary btn-sm" onclick="Views.Payroll.sharePayslip(${idx})" title="Share via WhatsApp">📤</button>
+          ${p.net_pay < 0 && p.status !== 'finalized' ? `<button class="btn btn-sm" style="background:var(--danger-light);color:var(--danger);border-color:var(--danger)" onclick="Views.Payroll.showCarryForward(${idx})">→ Carry Fwd</button>` : ''}
         </td>
       </tr>
       <tr id="prow-detail-${idx}" class="hidden">
@@ -1049,6 +1052,20 @@ Views.Payroll = {
       <tr id="prow-edit-${idx}" class="hidden" style="background:var(--surface2)">
         <td colspan="12" style="padding:16px 12px">
           ${this.renderEditPanel(p, idx)}
+        </td>
+      </tr>
+      <tr id="prow-carry-${idx}" class="hidden">
+        <td colspan="12" style="padding:12px 16px;background:var(--danger-light);border-bottom:2px solid var(--danger)">
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <span style="font-weight:700;color:var(--danger)">⚠ Carry ${fmt(Math.abs(p.net_pay))} forward as advance</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="font-size:11px;white-space:nowrap;margin:0">Deduct on date</label>
+              <input type="date" id="carry-date-${idx}" value="${new Date().toISOString().split('T')[0]}"
+                style="padding:4px 8px;font-size:13px;width:auto" />
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="Views.Payroll.confirmCarryForward(${idx})">Confirm &amp; Save</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('prow-carry-${idx}').classList.add('hidden')">Cancel</button>
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -1104,7 +1121,38 @@ Views.Payroll = {
     const isOpen = !row.classList.contains('hidden');
     document.querySelectorAll('[id^="prow-detail-"]').forEach(r => r.classList.add('hidden'));
     document.querySelectorAll('[id^="prow-edit-"]').forEach(r => r.classList.add('hidden'));
+    document.querySelectorAll('[id^="prow-carry-"]').forEach(r => r.classList.add('hidden'));
     if (!isOpen) row.classList.remove('hidden');
+  },
+
+  showCarryForward(idx) {
+    document.querySelectorAll('[id^="prow-carry-"]').forEach(r => r.classList.add('hidden'));
+    document.querySelectorAll('[id^="prow-detail-"]').forEach(r => r.classList.add('hidden'));
+    document.querySelectorAll('[id^="prow-edit-"]').forEach(r => r.classList.add('hidden'));
+    document.getElementById('prow-carry-' + idx)?.classList.remove('hidden');
+  },
+
+  async confirmCarryForward(idx) {
+    const p    = State.payroll[idx];
+    const date = document.getElementById('carry-date-' + idx)?.value;
+    if (!date) { toast('Select a date', 'error'); return; }
+    const amount = Math.abs(p.net_pay);
+    const emp    = State.employees.find(e => e.emp_id === p.emp_id);
+    try {
+      await API.call('saveAdvance', {
+        advance_id:  null,
+        emp_id:      p.emp_id,
+        emp_name:    emp?.name || p.emp_id,
+        date,
+        amount,
+        status:      'Approved',
+        created_by:  'Previous Month Bal'
+      });
+      p.total_advances = (p.total_advances || 0) + amount;
+      p.net_pay = 0;
+      this.renderTable(State.payroll);
+      toast(`₹${amount.toLocaleString('en-IN')} carried forward as advance for ${emp?.name || p.emp_id}`, 'success');
+    } catch(e) { toast(e.message, 'error'); }
   },
 
   _dayCalc(day, hourly, settings, holidayDates) {
@@ -2631,11 +2679,24 @@ Views.Payments = {
     const wrap = document.getElementById('pay-run-wrap');
     wrap.innerHTML = '<div class="spinner"></div>';
     try {
-      const [runRes, payRes] = await Promise.all([
+      const [runRes, payRes, payrollRes] = await Promise.all([
         API.call('getPaymentRun', { month }),
-        API.call('getPayments', { month })
+        API.call('getPayments', { month }),
+        API.call('getPayroll', { month })
       ]);
-      this._run = runRes.data || [];
+      this._run     = runRes.data     || [];
+      this._payroll = payrollRes.data || [];
+      const sample  = this._payroll.find(p => p.adv_end_date);
+      let advances  = [];
+      if (sample && sample.adv_start_date && sample.adv_end_date) {
+        const advRes = await API.call('getAdvances', {
+          status: 'Approved',
+          start_date: sample.adv_start_date,
+          end_date:   sample.adv_end_date
+        });
+        advances = advRes.data || [];
+      }
+      this._advances = advances;
       this.render(this._run, payRes.data || []);
     } catch(e) { toast(e.message, 'error'); }
   },
@@ -2647,20 +2708,79 @@ Views.Payments = {
     const totalRem  = run.reduce((s, r) => s + Math.max(0, r.remaining), 0);
     const today = new Date().toISOString().split('T')[0];
 
+    // Payroll breakdown totals
+    const pr             = this._payroll || [];
+    const totalGross     = pr.reduce((s, p) => s + (p.gross_pay          || 0), 0);
+    const totalOT        = pr.reduce((s, p) => s + (p.ot_earnings        || 0), 0);
+    const totalShortfall = pr.reduce((s, p) => s + (p.shortfall_deduction|| 0), 0);
+    const totalBonusCut  = pr.reduce((s, p) => s + (p.bonus_cut          || 0), 0);
+    const totalAdvDed    = pr.reduce((s, p) => s + (p.total_advances     || 0), 0);
+
+    // Advances grouped by date
+    const advByDate = {};
+    (this._advances || []).forEach(a => {
+      const d = a.date || '—';
+      advByDate[d] = (advByDate[d] || 0) + Number(a.amount);
+    });
+    const advDates = Object.keys(advByDate).sort();
+    const advByDateRows = advDates.map(d => `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:6px 10px;font-size:13px">${fmtDate(d)}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600;font-size:13px">${fmt(advByDate[d])}</td>
+      </tr>`).join('');
+
     wrap.innerHTML = `
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-        <div class="card" style="flex:1;min-width:130px;text-align:center;padding:12px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Payroll</div>
-          <div style="font-size:20px;font-weight:700">${fmt(totalNet)}</div>
+      <div class="card" style="margin-bottom:16px;padding:16px 20px">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px">Month Summary — ${this._month}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${advDates.length ? '16px' : '0'}">
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Gross Salary</div>
+            <div style="font-size:17px;font-weight:700">${fmt(totalGross)}</div>
+            ${totalOT > 0 ? `<div style="font-size:11px;color:var(--success);margin-top:2px">+${fmt(totalOT)} OT</div>` : ''}
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Shortfall Ded.</div>
+            <div style="font-size:17px;font-weight:700;color:var(--danger)">${fmt(totalShortfall)}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Advances Deducted</div>
+            <div style="font-size:17px;font-weight:700;color:var(--warning)">${fmt(totalAdvDed)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">${advDates.length} date${advDates.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Bonus Deducted</div>
+            <div style="font-size:17px;font-weight:700;color:var(--warning)">${fmt(totalBonusCut)}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--primary);border-radius:var(--radius-sm);padding:12px;text-align:center;box-shadow:var(--shadow-teal)">
+            <div style="font-size:10px;color:rgba(0,0,0,.55);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Total to Pay</div>
+            <div style="font-size:17px;font-weight:800">${fmt(totalNet)}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Paid So Far</div>
+            <div style="font-size:17px;font-weight:700;color:var(--success)">${fmt(totalPaid)}</div>
+          </div>
+          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Outstanding</div>
+            <div style="font-size:17px;font-weight:700;color:${totalRem > 0 ? 'var(--danger)' : 'var(--success)'}">
+              ${totalRem > 0 ? fmt(totalRem) : '✓ Done'}
+            </div>
+          </div>
         </div>
-        <div class="card" style="flex:1;min-width:130px;text-align:center;padding:12px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Paid So Far</div>
-          <div style="font-size:20px;font-weight:700;color:var(--success)">${fmt(totalPaid)}</div>
-        </div>
-        <div class="card" style="flex:1;min-width:130px;text-align:center;padding:12px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Outstanding</div>
-          <div style="font-size:20px;font-weight:700;color:${totalRem > 0 ? 'var(--danger)' : 'var(--success)'}">${fmt(totalRem)}</div>
-        </div>
+        ${advDates.length ? `
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Advances by Date</div>
+          <table style="width:100%;border-collapse:collapse;max-width:380px">
+            <thead><tr style="background:var(--surface2)">
+              <th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Date</th>
+              <th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Total Taken</th>
+            </tr></thead>
+            <tbody>${advByDateRows}</tbody>
+            <tfoot><tr style="background:var(--surface2)">
+              <td style="padding:7px 10px;font-weight:700;font-size:13px">Grand Total</td>
+              <td style="padding:7px 10px;text-align:right;font-weight:700;font-size:13px">${fmt(totalAdvDed)}</td>
+            </tr></tfoot>
+          </table>
+        </div>` : ''}
       </div>
 
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
