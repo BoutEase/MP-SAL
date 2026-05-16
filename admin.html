@@ -558,11 +558,12 @@ const AnomalyDetector = {
 
   detect(parsedEmployees) {
     const anomalies = []; // { empName, date, day, punchIn, punchOut, calcHours, type }
+    const isEmpty = s => !s || s.trim() === '' || s.trim() === '-' || s.trim() === '--';
     for (const emp of parsedEmployees) {
       for (const day of emp.days) {
         if (day.status !== 'Absent') continue;
-        const hasIn  = !!day.punchIn;
-        const hasOut = !!day.punchOut;
+        const hasIn  = !isEmpty(day.punchIn);
+        const hasOut = !isEmpty(day.punchOut);
         if (!hasIn && !hasOut) continue;
 
         if (hasIn && hasOut) {
