@@ -63,6 +63,7 @@ function doPost(e) {
       saveBulkPayments:     () => saveBulkPayments(data.records),
       getSettings:          () => getSettings(),
       saveSettings:         () => saveSettings(data),
+      generateLoginCodes:   () => generateLoginCodes(),
       getEmployeePayslip:   () => getEmployeePayslip(data),
       getEmployeeAdvanceHistory: () => getEmployeeAdvanceHistory(data),
     };
@@ -164,8 +165,8 @@ function getEmployeeAdvanceHistory(data) {
 
 function getDefaultSettings() {
   return {
-    ADMIN_PIN: '1234',
-    MANAGER_PIN: '5678',
+    ADMIN_PIN: '182612',
+    MANAGER_PIN: '123456',
     SHORTFALL_THRESHOLD_HOURS: '8.5',
     ADD_LUNCH_TO_OT: 'true',
     LUNCH_DURATION_HOURS: '1',
@@ -211,6 +212,27 @@ function saveSettings(data) {
     }
   });
   return { success: true };
+}
+
+function generateLoginCodes() {
+  var sheet = getSheet('Employees');
+  var rows = sheet.getDataRange().getValues();
+  var used = new Set();
+  var updates = [];
+
+  // Collect how many active employees need codes
+  for (var i = 1; i < rows.length; i++) {
+    if (!rows[i][0]) continue;
+    var code;
+    do {
+      code = String(Math.floor(100000 + Math.random() * 900000));
+    } while (used.has(code));
+    used.add(code);
+    updates.push({ row: i + 1, code: code, name: rows[i][1] });
+    sheet.getRange(i + 1, 8).setValue(code);
+  }
+
+  return { success: true, updated: updates.length, codes: updates.map(function(u) { return { name: u.name, code: u.code }; }) };
 }
 
 // ---- Sheet Init ----
