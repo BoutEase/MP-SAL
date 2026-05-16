@@ -2984,7 +2984,7 @@ Views.Payments = {
     const distOutstanding = Math.max(0, distTotal - batchPaidSoFar);
 
     // Totals for summary card
-    const totalNet  = run.reduce((s, r) => s + r.net_pay, 0);
+    const totalNet  = run.reduce((s, r) => s + Math.max(0, r.net_pay), 0);
     const totalPaid = run.reduce((s, r) => s + r.already_paid, 0) + batchPaidSoFar;
     const totalRem  = directRun.reduce((s, r) => s + Math.max(0, r.remaining), 0) + distOutstanding;
 
