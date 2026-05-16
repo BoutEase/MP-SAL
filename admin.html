@@ -954,7 +954,7 @@ Views.Payroll = {
     const empMap = {};
     State.employees.forEach(e => empMap[e.emp_id] = e);
 
-    // Borderline warning banner + negative balance alert
+    // Borderline warning banner
     const bannerWrap = document.getElementById('payroll-banner-wrap');
     if (bannerWrap) {
       const borderlineAlerts = payroll
@@ -964,46 +964,7 @@ Views.Payroll = {
           return `${emp.name} (${p.borderline_days} days)`;
         });
 
-      const negativeRows = payroll
-        .map((p, idx) => ({ p, idx, emp: empMap[p.emp_id] || { name: p.emp_id } }))
-        .filter(({ p }) => p.net_pay < 0 && p.status !== 'finalized');
-
       bannerWrap.innerHTML =
-        (negativeRows.length ? `
-        <div id="negative-bal-banner" style="background:var(--danger-light);border:1px solid var(--danger);border-radius:8px;padding:14px 16px;margin-bottom:12px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <span style="font-size:18px">🚨</span>
-            <strong style="color:var(--danger);font-size:14px">Negative Balance Alert — ${negativeRows.length} employee${negativeRows.length > 1 ? 's' : ''}</strong>
-            <span style="flex:1"></span>
-            <button onclick="document.getElementById('negative-bal-banner').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;line-height:1;padding:0">✕</button>
-          </div>
-          <p style="font-size:13px;color:var(--danger);margin:0 0 12px">The following employee(s) have taken more advance than their earned salary this payroll. Convert each negative balance to a carried-forward advance so it is deducted next month.</p>
-          <table style="width:100%;border-collapse:collapse;font-size:13px;max-width:560px">
-            <thead><tr style="background:rgba(220,53,69,.1)">
-              <th style="padding:7px 10px;text-align:left;color:var(--danger)">Employee</th>
-              <th style="padding:7px 10px;text-align:right;color:var(--danger)">Negative Balance</th>
-              <th style="padding:7px 10px;text-align:center;color:var(--danger)">Advance Date</th>
-              <th style="padding:7px 10px"></th>
-            </tr></thead>
-            <tbody>
-              ${negativeRows.map(({ p, idx, emp }) => `
-              <tr style="border-top:1px solid rgba(220,53,69,.2)" id="neg-row-${idx}">
-                <td style="padding:7px 10px;font-weight:600">${emp.name}</td>
-                <td style="padding:7px 10px;text-align:right;font-weight:700;color:var(--danger)">${fmt(Math.abs(p.net_pay))}</td>
-                <td style="padding:7px 10px;text-align:center">
-                  <input type="date" id="neg-date-${idx}" value="${new Date().toISOString().split('T')[0]}"
-                    style="padding:4px 8px;font-size:12px;width:auto;border-color:var(--danger)" />
-                </td>
-                <td style="padding:7px 10px;text-align:center">
-                  <button class="btn btn-sm" style="background:var(--danger);color:#fff;border-color:var(--danger)"
-                    onclick="Views.Payroll.confirmCarryForwardFromBanner(${idx})">
-                    Convert to Advance
-                  </button>
-                </td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>` : '') +
         (borderlineAlerts.length ? `
         <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px">
           <span style="font-size:16px">⚠️</span>
