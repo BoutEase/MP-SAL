@@ -383,16 +383,13 @@ function toast(msg, type) {
 }
 
 // ---- App init ----
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzdNfZb4_dtZrZO4IYVYudJMGJKb7X2JqgNZovRdJoereQVR4YRUZqhn5XXNvAL6Op2VQ/exec';
 const App = {
   init() {
-    State.gasUrl = localStorage.getItem('mpsal_url');
+    State.gasUrl = localStorage.getItem('mpsal_url') || GAS_URL;
     const theme = localStorage.getItem('mpsal_theme') || 'light';
     document.documentElement.setAttribute('data-theme', theme);
-    if (!State.gasUrl) {
-      show('screen-setup');
-    } else {
-      show('screen-login');
-    }
+    show('screen-login');
   },
   toggleTheme() {
     const cur = document.documentElement.getAttribute('data-theme');
