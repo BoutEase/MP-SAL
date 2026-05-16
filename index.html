@@ -591,11 +591,10 @@ const ManagerApp = {
       emps.forEach(emp => {
         const existing = this.dateAdvances.find(a => String(a.emp_id) === String(emp.emp_id));
         const serverVal = existing ? Math.round(existing.amount) : '';
-        // Prefer user-typed value; fall back to server value
-        const val = (userValues[String(emp.emp_id)] !== undefined && userValues[String(emp.emp_id)] !== '')
-          ? userValues[String(emp.emp_id)]
-          : serverVal;
-        const isHighlighted = existing || (val !== '' && val !== 0);
+        // Use in-operator so user clearing an input (value="") is preserved too
+        const empKey = String(emp.emp_id);
+        const val = (empKey in userValues) ? userValues[empKey] : serverVal;
+        const isHighlighted = existing || (val !== '' && Number(val) > 0);
         const inputStyle = isHighlighted
           ? 'width:110px;text-align:right;padding:6px 8px;border-color:var(--accent);background:var(--accent-light)'
           : 'width:110px;text-align:right;padding:6px 8px';
