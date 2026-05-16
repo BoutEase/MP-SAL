@@ -3019,12 +3019,8 @@ Views.Payments = {
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${advDates.length ? '16px' : '0'}">
           <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Gross Salary</div>
-            <div style="font-size:17px;font-weight:700">${fmt(totalGross)}</div>
-            ${totalOT > 0 ? `<div style="font-size:11px;color:var(--success);margin-top:2px">+${fmt(totalOT)} OT</div>` : ''}
-          </div>
-          <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Shortfall Ded.</div>
-            <div style="font-size:17px;font-weight:700;color:var(--danger)">${fmt(totalShortfall)}</div>
+            <div style="font-size:17px;font-weight:700">${fmt(totalGross + totalOT)}</div>
+            ${totalOT > 0 ? `<div style="font-size:11px;color:var(--success);margin-top:2px">incl. ${fmt(totalOT)} OT</div>` : ''}
           </div>
           <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Advances Deducted</div>
