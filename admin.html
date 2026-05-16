@@ -2805,7 +2805,11 @@ Views.Payments = {
 
     wrap.innerHTML = `
       <div class="card" style="margin-bottom:16px;padding:16px 20px">
-        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px">Month Summary — ${this._month}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Month Summary — ${this._month}</div>
+          <span style="flex:1"></span>
+          <button class="btn btn-secondary btn-sm" onclick="Views.Payments.downloadOverallPDF()">↓ Overall PDF</button>
+        </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${advDates.length ? '16px' : '0'}">
           <div style="flex:1;min-width:110px;background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center">
             <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Gross Salary</div>
@@ -3187,6 +3191,46 @@ Views.Payments = {
       <br><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer">🖨 Print / Save PDF</button>
       </body></html>`;
     const w = window.open('', '_blank', 'width=560,height=700');
+    w.document.write(html); w.document.close();
+  },
+
+  downloadOverallPDF() {
+    const empMap2 = {};
+    State.employees.forEach(e => empMap2[e.emp_id] = e);
+    const eligible = this._run.filter(r => r.net_pay > 0);
+    if (!eligible.length) { toast('No employees with positive balance', 'error'); return; }
+    const total = eligible.reduce((s, r) => s + r.net_pay, 0);
+    const rows = eligible.map(r => {
+      const batch = empMap2[r.emp_id]?.payment_batch || 'Direct';
+      return `<tr style="border-bottom:1px solid #e2e8f0">
+        <td style="padding:9px 12px;font-size:14px">${r.emp_name}</td>
+        <td style="padding:9px 12px;font-size:13px;color:#64748b">${batch}</td>
+        <td style="padding:9px 12px;text-align:right;font-size:14px;font-weight:600">₹${r.net_pay.toLocaleString('en-IN')}</td>
+      </tr>`;
+    }).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8">
+      <title>Salary Statement — ${this._month}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:32px;max-width:600px;margin:0 auto}
+        h2{margin:0 0 4px;font-size:20px}
+        p{margin:0 0 20px;color:#64748b;font-size:13px}
+        table{width:100%;border-collapse:collapse}
+        thead th{padding:9px 12px;text-align:left;background:#f1f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
+        thead th:last-child{text-align:right}
+        tfoot td{padding:10px 12px;font-weight:700;font-size:15px;background:#f1f5f9}
+        tfoot td:last-child{text-align:right}
+        @media print{button{display:none}}
+      </style></head><body>
+      <h2>MP SAL — Salary Statement</h2>
+      <p>${this._month} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-IN')} &nbsp;·&nbsp; ${eligible.length} employees</p>
+      <table>
+        <thead><tr><th>Employee</th><th>Batch</th><th style="text-align:right">Net Pay</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2">Total</td><td>₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+      </table>
+      <br><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer">🖨 Print / Save PDF</button>
+      </body></html>`;
+    const w = window.open('', '_blank', 'width=620,height=750');
     w.document.write(html); w.document.close();
   },
 
