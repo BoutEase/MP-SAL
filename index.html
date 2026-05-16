@@ -159,7 +159,6 @@
     tbody tr:hover td { background: #F0FDFD; }
 
     /* ── Setup Screen ── */
-    #screen-setup { display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); }
     .setup-box { width: 100%; max-width: 440px; }
     .setup-box h1 { font-family: var(--font-serif); font-size: 26px; font-weight: 700; margin-bottom: 6px; letter-spacing: -.02em; }
     .setup-box p  { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
@@ -287,18 +286,6 @@
 <body>
 
 <!-- SETUP SCREEN -->
-<div id="screen-setup" class="screen hidden">
-  <div class="setup-box card">
-    <h1>Connect to Google Sheets</h1>
-    <p>Paste your Google Apps Script Web App URL below. You only need to do this once.</p>
-    <div class="field">
-      <label>Apps Script Web App URL</label>
-      <input type="url" id="setup-url" placeholder="https://script.google.com/macros/s/..." />
-    </div>
-    <button class="btn btn-primary" style="width:100%" onclick="App.setup()">Connect &amp; Initialise Sheets</button>
-    <div id="setup-status" style="margin-top:12px;font-size:13px;color:var(--muted)"></div>
-  </div>
-</div>
 
 <!-- LOGIN SCREEN -->
 <div id="screen-login" class="screen hidden">
@@ -322,8 +309,6 @@
     </div>
     <div class="login-footer">
       <button class="theme-toggle" onclick="App.toggleTheme()">Toggle theme</button>
-      &nbsp;
-      <button class="theme-toggle" onclick="App.changeUrl()">Change URL</button>
     </div>
   </div>
 </div>
@@ -384,10 +369,10 @@ function toast(msg, type) {
 }
 
 // ---- App init ----
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzdNfZb4_dtZrZO4IYVYudJMGJKb7X2JqgNZovRdJoereQVR4YRUZqhn5XXNvAL6Op2VQ/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyw0zcluAgQ4cNP7bdDX75sVEXoiLvc6jdnO_hDWuSGGWg9VifE0sf_KwM0ff2bylUqaA/exec';
 const App = {
   init() {
-    State.gasUrl = localStorage.getItem('mpsal_url') || GAS_URL;
+    State.gasUrl = GAS_URL;
     const theme = localStorage.getItem('mpsal_theme') || 'light';
     document.documentElement.setAttribute('data-theme', theme);
     show('screen-login');
@@ -397,29 +382,6 @@ const App = {
     const next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('mpsal_theme', next);
-  },
-  changeUrl() {
-    localStorage.removeItem('mpsal_url');
-    State.gasUrl = null;
-    show('screen-setup');
-  },
-  async setup() {
-    const url = document.getElementById('setup-url').value.trim();
-    if (!url.startsWith('https://')) { toast('Enter a valid URL', 'error'); return; }
-    const status = document.getElementById('setup-status');
-    status.textContent = 'Connecting…';
-    State.gasUrl = url;
-    State.role = 'admin'; State.pin = '';
-    try {
-      const r = await fetch(url, { method: 'POST', body: JSON.stringify({ action: 'initSheets', data: {} }) });
-      const j = await r.json();
-      if (!j.success) throw new Error(j.error);
-      localStorage.setItem('mpsal_url', url);
-      status.textContent = 'Connected! ' + (j.message || '');
-      setTimeout(() => { State.role = null; State.pin = null; show('screen-login'); }, 1200);
-    } catch(e) {
-      status.textContent = 'Error: ' + e.message;
-    }
   }
 };
 
@@ -475,7 +437,7 @@ async function loadCoreData() {
 
 // ---- Utility ----
 function show(id) {
-  ['screen-setup','screen-login','screen-manager','screen-employee'].forEach(s => {
+  ['screen-login','screen-manager','screen-employee'].forEach(s => {
     const el = document.getElementById(s);
     if (el) el.classList.toggle('hidden', s !== id);
   });
