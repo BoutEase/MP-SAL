@@ -105,7 +105,16 @@ function verifyPin(data) {
 function getEmployeePayslip(data) {
   var empId = data.emp_id;
   var month = data.month;
-  var payRows = getPayroll(month).data.filter(function(p) { return p.emp_id === empId; });
+
+  // 'latest' → find the most recent finalized month for this employee
+  if (month === 'latest') {
+    var allRows = getPayroll().data
+      .filter(function(p) { return p.emp_id === empId && p.status === 'finalized'; })
+      .sort(function(a, b) { return b.month > a.month ? 1 : -1; });
+    month = allRows.length ? allRows[0].month : null;
+  }
+
+  var payRows = month ? getPayroll(month).data.filter(function(p) { return p.emp_id === empId; }) : [];
   var pay = payRows[0] || null;
   var advances = [];
   if (pay && pay.adv_start_date && pay.adv_end_date) {
@@ -124,13 +133,12 @@ function getEmployeePayslip(data) {
     var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
       .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
     if (bonusRows.length) {
-      // Take the row with the latest month
       bonusRows.sort(function(a, b) { return String(a[3]) > String(b[3]) ? 1 : -1; });
       bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
     }
   } catch(e) {}
 
-  return { success: true, data: { payroll: pay, advances: advances, bonus_balance: bonusBalance } };
+  return { success: true, data: { payroll: pay, advances: advances, bonus_balance: bonusBalance, month: month } };
 }
 
 function getEmployeeAdvanceHistory(data) {

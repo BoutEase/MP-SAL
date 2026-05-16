@@ -826,8 +826,25 @@ const EmployeeApp = {
           <div id="emp-pane-advances" class="hidden"></div>
         </div>
       </div>`;
-    this.load(this.currentMonth);
+    this.loadLatest();
   },
+
+  async loadLatest() {
+    const slip = document.getElementById('emp-slip');
+    if (slip) slip.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await API.call('getEmployeePayslip', { emp_id: State.empId, month: 'latest' });
+      const resolvedMonth = (r.data && r.data.month) || this.currentMonth;
+      this.currentMonth = resolvedMonth;
+      const picker = document.getElementById('emp-month');
+      if (picker) picker.value = resolvedMonth;
+      this._renderSlip(r.data, resolvedMonth);
+    } catch(e) {
+      if (slip) slip.innerHTML = `<div class="card" style="color:var(--danger)">${e.message}</div>`;
+    }
+  },
+
+
 
   showTab(tab) {
     const payTab = document.getElementById('emp-tab-payslip');
@@ -907,12 +924,19 @@ const EmployeeApp = {
     slip.innerHTML = '<div class="spinner"></div>';
     try {
       const r = await API.call('getEmployeePayslip', { emp_id: State.empId, month });
-      const { payroll: p, advances } = r.data || {};
+      this._renderSlip(r.data, month);
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  _renderSlip(data, month) {
+    const slip = document.getElementById('emp-slip');
+    if (!slip) return;
+    const { payroll: p, advances } = data || {};
       if (!p) {
         slip.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);padding:32px">No payroll data found for ${month}.</div>`;
         return;
       }
-      const bonus_balance = r.data.bonus_balance || 0;
+      const bonus_balance = (data && data.bonus_balance) || 0;
       this._slip = { p, advances, month, bonus_balance };
       // Use stored total_advances from payroll record (what was actually deducted);
       // fall back to summing fetched advances if present
@@ -1024,7 +1048,6 @@ const EmployeeApp = {
             </tbody>
           </table>
         </div>` : ''}` ;
-    } catch(e) { toast(e.message, 'error'); }
   },
 
   _row(label, val) {
