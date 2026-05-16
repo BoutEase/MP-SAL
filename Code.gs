@@ -257,7 +257,7 @@ function initSheets() {
   }
 
   const defs = {
-    Employees: ['emp_id','name','team','designation','petpooja_id','petpooja_name','weekly_salary','login_code','status','joining_date','company_room','bonus_scheme'],
+    Employees: ['emp_id','name','team','designation','petpooja_id','petpooja_name','weekly_salary','login_code','status','joining_date','company_room','bonus_scheme','payment_batch'],
     Holidays:  ['date','name'],
     Payroll:   ['payroll_id','emp_id','month','full_days','half_days','absent_days','week_off_days','holiday_absent_days','ot_weekday_min','ot_sunday_min','ot_holiday_min','shortfall_min','weekly_salary','daily_rate','hourly_rate','TD','gross_pay','ot_earnings','shortfall_deduction','bonus_eligible','bonus_cut','total_advances','net_pay','status','finalized_date','notes','adv_start_date','adv_end_date','attendance_json'],
     Advances:  ['advance_id','emp_id','emp_name','date','amount','status','created_by','created_at'],
@@ -305,7 +305,8 @@ function getEmployees() {
         petpooja_id: String(r[4]), petpooja_name: r[5],
         weekly_salary: Number(r[6]), login_code: r[7],
         status: r[8], joining_date: r[9], company_room: r[10] || '',
-        bonus_scheme: r[11] || 'No'
+        bonus_scheme: r[11] || 'No',
+        payment_batch: r[12] || 'Direct'
       };
     })
   };
@@ -333,7 +334,8 @@ function saveEmployee(data) {
     data.weekly_salary, data.login_code || '', data.status || 'Active',
     data.joining_date || Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'),
     data.company_room || '',
-    data.bonus_scheme || 'No'
+    data.bonus_scheme || 'No',
+    data.payment_batch || 'Direct'
   ];
 
   // First try exact emp_id match
@@ -449,9 +451,10 @@ function saveAdvance(data) {
       const next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(5, '0');
       data.advance_id = 'ADV' + next;
       data.created_at = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
+      var initStatus = data.status || 'Pending';
       sheet.appendRow([
         data.advance_id, data.emp_id, data.emp_name, dateStr,
-        amount, 'Pending', data.created_by || 'Manager', data.created_at
+        amount, initStatus, data.created_by || 'Manager', data.created_at
       ]);
     } else {
       // Edit: update date and amount, reset to Pending so admin re-approves
@@ -467,7 +470,7 @@ function saveAdvance(data) {
         data.created_at = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
         sheet.appendRow([
           data.advance_id, data.emp_id, data.emp_name, dateStr,
-          amount, 'Pending', data.created_by || 'Manager', data.created_at
+          amount, data.status || 'Pending', data.created_by || 'Manager', data.created_at
         ]);
       }
     }
