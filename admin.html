@@ -11,7 +11,8 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>MP-SAL Admin</title>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,500;0,600;0,700;1,500;1,600;1,700&display=swap" rel="stylesheet">
@@ -1981,35 +1982,125 @@ Views.Payroll = {
     </div>`;
   },
 
-  _downloadPDF(html, filename) {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.75);z-index:10000;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:600;font-family:sans-serif;letter-spacing:.02em';
-    overlay.textContent = 'Generating PDF…';
-    document.body.appendChild(overlay);
-
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#fff;font-family:sans-serif;color:#0f172a;box-sizing:border-box;z-index:9999;padding:8px';
-    wrap.innerHTML = html;
-    document.body.appendChild(wrap);
-
-    const cleanup = () => { wrap.remove(); overlay.remove(); };
-    setTimeout(() => {
-      html2pdf().set({
-        margin: 10,
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.97 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, allowTaint: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(wrap).save().then(cleanup).catch(e => { cleanup(); toast('PDF failed: ' + e.message, 'error'); });
-    }, 150);
+  _newDoc() {
+    const { jsPDF } = window.jspdf;
+    return new jsPDF({ unit: 'mm', format: 'a4' });
   },
+
+  _Rs(n) { return 'Rs. ' + Number(n || 0).toLocaleString('en-IN'); },
+  _fmtH(min) { return min ? `${Math.floor(min/60)}h ${min%60}m` : '--'; },
 
   async downloadPayslip(idx) {
     const p   = State.payroll[idx];
     const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
     const advances = State.advances.filter(a => a.emp_id === p.emp_id);
-    const html = this._slipHTML(p, emp, advances);
-    this._downloadPDF(html, `Payslip_${emp.name}_${p.month}.pdf`);
+    const Rs = this._Rs.bind(this);
+    const fmtH = this._fmtH.bind(this);
+
+    const doc  = this._newDoc();
+    const PW = 210, M = 14, CW = PW - 2*M;
+
+    const advTotal   = advances.reduce((s,a) => s + Number(a.amount), 0);
+    const grossTotal = (p.gross_pay||0) + (p.ot_earnings||0);
+    const bonusCut   = p.bonus_cut || 0;
+    const deductions = (p.shortfall_deduction||0) + advTotal + bonusCut;
+    const net        = grossTotal - deductions;
+    const company    = (State.settings||{}).COMPANY_NAME || 'Mahitha Prasad';
+
+    let y = M;
+
+    // Header
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+    doc.text(emp.name, M, y+6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,116,139);
+    doc.text(`Pay Slip  |  ${p.month}${emp.team?' | '+emp.team:''}`, M, y+13);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
+    doc.text(company, PW-M, y+6, {align:'right'});
+    if (p.adv_start_date && p.adv_end_date) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100,116,139);
+      doc.text(`Period: ${fmtDate(p.adv_start_date)} to ${fmtDate(p.adv_end_date)}`, PW-M, y+13, {align:'right'});
+    }
+    y += 20;
+    doc.setDrawColor(200,210,220); doc.setLineWidth(0.4); doc.line(M, y, PW-M, y); y += 6;
+
+    // Attendance + OT side by side
+    doc.autoTable({
+      startY: y, margin: {left:M, right:M},
+      head: [['Attendance','','Overtime','']],
+      body: [
+        ['Full Days',   String(p.full_days??'--'),   'Weekday OT', fmtH(p.ot_weekday_min)],
+        ['Half Days',   String(p.half_days??'--'),   'Sunday OT',  fmtH(p.ot_sunday_min)],
+        ['Absent Days', String(p.absent_days??'--'), 'Holiday OT', fmtH(p.ot_holiday_min)],
+        ['Week Off',    String(p.week_off_days??'--'), '', ''],
+      ],
+      theme: 'plain',
+      styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
+      headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
+      columnStyles: {
+        0:{textColor:[100,116,139], cellWidth:48},
+        1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
+        2:{textColor:[100,116,139], cellWidth:48},
+        3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+      }
+    });
+    y = doc.lastAutoTable.finalY + 4;
+    doc.setDrawColor(200,210,220); doc.line(M, y, PW-M, y); y += 6;
+
+    // Earnings + Deductions side by side
+    const dedRows = [['Shortfall', Rs(p.shortfall_deduction||0)], ['Advances', Rs(advTotal)]];
+    if (bonusCut > 0) dedRows.push(['Bonus Contribution', Rs(bonusCut)]);
+    const earnRows = [['Gross Pay', Rs(p.gross_pay||0)], ['OT Earnings', Rs(p.ot_earnings||0)]];
+    const maxR = Math.max(earnRows.length, dedRows.length);
+    const edBody = [];
+    for (let i = 0; i < maxR; i++) edBody.push([earnRows[i]?.[0]??'', earnRows[i]?.[1]??'', dedRows[i]?.[0]??'', dedRows[i]?.[1]??'']);
+    edBody.push(['Total Earnings', Rs(grossTotal), 'Total Deductions', Rs(deductions)]);
+
+    doc.autoTable({
+      startY: y, margin: {left:M, right:M},
+      head: [['Earnings','','Deductions','']],
+      body: edBody,
+      theme: 'plain',
+      styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
+      headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
+      columnStyles: {
+        0:{textColor:[100,116,139], cellWidth:48},
+        1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
+        2:{textColor:[100,116,139], cellWidth:48},
+        3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+      },
+      didParseCell: (d) => {
+        if (d.row.index === edBody.length-1) { d.cell.styles.fontStyle='bold'; d.cell.styles.textColor=[15,23,42]; }
+      }
+    });
+    y = doc.lastAutoTable.finalY + 6;
+
+    // Net Pay box
+    doc.setFillColor(37,99,235);
+    doc.roundedRect(M, y, CW, 14, 2, 2, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
+    doc.text('Net In-Hand', M+5, y+9);
+    doc.setFontSize(14);
+    doc.text(Rs(net), PW-M-5, y+9, {align:'right'});
+    y += 20;
+
+    // Advance details
+    if (advances.length) {
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(15,23,42);
+      doc.text('Advance Details', M, y); y += 4;
+      doc.autoTable({
+        startY: y, margin: {left:M, right:M},
+        head: [['Date','Amount']],
+        body: advances.map(a => [fmtDate(a.date), Rs(Number(a.amount))]),
+        foot: [['Total Deducted', Rs(advTotal)]],
+        theme: 'striped',
+        styles: {fontSize:9},
+        headStyles: {fillColor:[241,245,249], textColor:[100,116,139]},
+        footStyles: {fillColor:[241,245,249], fontStyle:'bold', textColor:[15,23,42]},
+        columnStyles: {1:{halign:'right'}}
+      });
+    }
+
+    doc.save(`Payslip_${emp.name}_${p.month}.pdf`);
   },
 
   async sharePayslip(idx) {
@@ -3420,32 +3511,32 @@ Views.Payments = {
     State.employees.forEach(e => empMap2[e.emp_id] = e);
     const distRun = this._run.filter(r => empMap2[r.emp_id]?.payment_batch === 'Via Distributor' && r.net_pay > 0);
     if (!distRun.length) { toast('No distributor employees with positive balance', 'error'); return; }
-    const total = distRun.reduce((s, r) => s + r.net_pay, 0);
-    const rows  = distRun.map(r =>
-      `<tr style="border-bottom:1px solid #e2e8f0">
-        <td style="padding:9px 12px;font-size:14px">${r.emp_name}</td>
-        <td style="padding:9px 12px;text-align:right;font-size:14px;font-weight:600">₹${r.net_pay.toLocaleString('en-IN')}</td>
-      </tr>`).join('');
-    const html = `<div style="font-family:Arial,sans-serif;padding:32px;max-width:500px;margin:0 auto">
-      <h2 style="margin:0 0 4px;font-size:20px">MP SAL — Distributor Payment List</h2>
-      <p style="margin:0 0 20px;color:#64748b;font-size:13px">${this._month} · Generated ${new Date().toLocaleDateString('en-IN')}</p>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:#f1f5f9">
-          <th style="padding:9px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Employee</th>
-          <th style="padding:9px 12px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Amount</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr style="background:#f1f5f9">
-          <td style="padding:10px 12px;font-weight:700;font-size:15px">Total</td>
-          <td style="padding:10px 12px;font-weight:700;font-size:15px;text-align:right">₹${total.toLocaleString('en-IN')}</td>
-        </tr></tfoot>
-      </table>
-      <div style="display:flex;justify-content:space-between;margin-top:50px;font-size:13px;color:#64748b">
-        <div>Prepared by: _______________</div>
-        <div>Distributor sign: _______________</div>
-      </div>
-    </div>`;
-    this._downloadPDF(html, `Distributor_List_${this._month}.pdf`);
+    const total = distRun.reduce((s,r) => s + r.net_pay, 0);
+    const Rs = this._Rs.bind(this);
+
+    const doc = this._newDoc();
+    const M = 20, PW = 210;
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+    doc.text('MP SAL - Distributor Payment List', M, 20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(100,116,139);
+    doc.text(`${this._month}  |  Generated ${new Date().toLocaleDateString('en-IN')}`, M, 28);
+
+    doc.autoTable({
+      startY: 35, margin: {left:M, right:M},
+      head: [['Employee','Amount']],
+      body: distRun.map(r => [r.emp_name, Rs(r.net_pay)]),
+      foot: [['Total', Rs(total)]],
+      theme: 'striped',
+      headStyles: {fillColor:[241,245,249], textColor:[100,116,139], fontStyle:'bold'},
+      footStyles: {fillColor:[241,245,249], fontStyle:'bold', textColor:[15,23,42]},
+      columnStyles: {1:{halign:'right'}}
+    });
+
+    const fy = doc.lastAutoTable.finalY + 20;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,116,139);
+    doc.text('Prepared by: ___________________', M, fy);
+    doc.text('Distributor sign: ___________________', PW-M, fy, {align:'right'});
+    doc.save(`Distributor_List_${this._month}.pdf`);
   },
 
   downloadOverallPDF() {
@@ -3453,32 +3544,27 @@ Views.Payments = {
     State.employees.forEach(e => empMap2[e.emp_id] = e);
     const eligible = this._run.filter(r => r.net_pay > 0);
     if (!eligible.length) { toast('No employees with positive balance', 'error'); return; }
-    const total = eligible.reduce((s, r) => s + r.net_pay, 0);
-    const rows = eligible.map(r => {
-      const batch = empMap2[r.emp_id]?.payment_batch || 'Direct';
-      return `<tr style="border-bottom:1px solid #e2e8f0">
-        <td style="padding:9px 12px;font-size:14px">${r.emp_name}</td>
-        <td style="padding:9px 12px;font-size:13px;color:#64748b">${batch}</td>
-        <td style="padding:9px 12px;text-align:right;font-size:14px;font-weight:600">₹${r.net_pay.toLocaleString('en-IN')}</td>
-      </tr>`;
-    }).join('');
-    const html = `<div style="font-family:Arial,sans-serif;padding:32px;max-width:600px;margin:0 auto">
-      <h2 style="margin:0 0 4px;font-size:20px">MP SAL — Salary Statement</h2>
-      <p style="margin:0 0 20px;color:#64748b;font-size:13px">${this._month} · Generated ${new Date().toLocaleDateString('en-IN')} · ${eligible.length} employees</p>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:#f1f5f9">
-          <th style="padding:9px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Employee</th>
-          <th style="padding:9px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Batch</th>
-          <th style="padding:9px 12px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Net Pay</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr style="background:#f1f5f9">
-          <td colspan="2" style="padding:10px 12px;font-weight:700;font-size:15px">Total</td>
-          <td style="padding:10px 12px;font-weight:700;font-size:15px;text-align:right">₹${total.toLocaleString('en-IN')}</td>
-        </tr></tfoot>
-      </table>
-    </div>`;
-    this._downloadPDF(html, `Salary_Statement_${this._month}.pdf`);
+    const total = eligible.reduce((s,r) => s + r.net_pay, 0);
+    const Rs = this._Rs.bind(this);
+
+    const doc = this._newDoc();
+    const M = 20;
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+    doc.text('MP SAL - Salary Statement', M, 20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(100,116,139);
+    doc.text(`${this._month}  |  Generated ${new Date().toLocaleDateString('en-IN')}  |  ${eligible.length} employees`, M, 28);
+
+    doc.autoTable({
+      startY: 35, margin: {left:M, right:M},
+      head: [['Employee','Batch','Net Pay']],
+      body: eligible.map(r => [r.emp_name, empMap2[r.emp_id]?.payment_batch||'Direct', Rs(r.net_pay)]),
+      foot: [['Total','', Rs(total)]],
+      theme: 'striped',
+      headStyles: {fillColor:[241,245,249], textColor:[100,116,139], fontStyle:'bold'},
+      footStyles: {fillColor:[241,245,249], fontStyle:'bold', textColor:[15,23,42]},
+      columnStyles: {2:{halign:'right'}}
+    });
+    doc.save(`Salary_Statement_${this._month}.pdf`);
   },
 
   async remove(paymentId) {

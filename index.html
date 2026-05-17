@@ -10,7 +10,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.svg">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Lora:ital,wght@0,500;0,600;0,700;1,500;1,600;1,700&display=swap" rel="stylesheet">
@@ -1032,82 +1033,121 @@ const EmployeeApp = {
     </div>`;
   },
 
-  _downloadPDF(html, filename) {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.75);z-index:10000;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:600;font-family:sans-serif;letter-spacing:.02em';
-    overlay.textContent = 'Generating PDF…';
-    document.body.appendChild(overlay);
-
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#fff;font-family:sans-serif;color:#0f172a;box-sizing:border-box;z-index:9999;padding:8px';
-    wrap.innerHTML = html;
-    document.body.appendChild(wrap);
-
-    const cleanup = () => { wrap.remove(); overlay.remove(); };
-    setTimeout(() => {
-      html2pdf().set({
-        margin: 10,
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.97 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, allowTaint: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(wrap).save().then(cleanup).catch(e => { cleanup(); toast('PDF failed: ' + e.message, 'error'); });
-    }, 150);
-  },
-
   async downloadPayslip() {
     if (!this._slip) { toast('No payslip loaded', 'error'); return; }
     const { p, advances, month, bonus_balance } = this._slip;
-    const sr = (l, v) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px"><span style="color:#64748b">${l}</span><span style="font-weight:500">${v}</span></div>`;
-    const advTotal   = advances.length ? advances.reduce((s, a) => s + Number(a.amount), 0) : (p.total_advances || 0);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const PW = 210, M = 14, CW = PW - 2*M;
+    const Rs = n => 'Rs. ' + Number(n||0).toLocaleString('en-IN');
+    const fmtH = min => min ? `${Math.floor(min/60)}h ${min%60}m` : '--';
+
+    const advTotal   = advances.length ? advances.reduce((s,a) => s + Number(a.amount), 0) : (p.total_advances||0);
     const bonusCut   = p.bonus_cut || 0;
-    const grossTotal = (p.gross_pay || 0) + (p.ot_earnings || 0);
-    const deductions = (p.shortfall_deduction || 0) + advTotal + bonusCut;
+    const grossTotal = (p.gross_pay||0) + (p.ot_earnings||0);
+    const deductions = (p.shortfall_deduction||0) + advTotal + bonusCut;
     const net        = grossTotal - deductions;
-    const companyCont = parseInt(State.settings.COMPANY_CONTRIBUTION || 500);
-    const bonusAdd    = p.bonus_eligible ? (bonusCut + companyCont) : 0;
-    const newBonusBal = (bonus_balance || 0) + bonusAdd;
-    const period     = p.adv_start_date && p.adv_end_date ? `${fmtDate(p.adv_start_date)} → ${fmtDate(p.adv_end_date)}` : '—';
-    const html = `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
-        <div><div style="font-size:22px;font-weight:700">${State.empName}</div>
-          <div style="color:#64748b;font-size:13px">Pay Slip · ${month}</div></div>
-        <div style="text-align:right;font-size:13px"><div style="font-weight:700">Mahitha Prasad</div>
-          <div style="color:#64748b">Advance Period</div><div style="font-weight:600">${period}</div></div>
-      </div>
-      <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Attendance</div>
-          ${sr('Total Days', p.TD)}${sr('Absent', p.absent_days)}${sr('Week Off', p.week_off_days)}</div>
-        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Overtime</div>
-          ${sr('Weekday OT', fmtHrs(p.ot_weekday_min))}${sr('Sunday OT', fmtHrs(p.ot_sunday_min))}${sr('Holiday OT', fmtHrs(p.ot_holiday_min))}</div>
-      </div>
-      <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e2e8f0;padding-top:16px;margin-bottom:16px">
-        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Earnings</div>
-          ${sr('Gross Pay', fmt(p.gross_pay||0))}${sr('OT Earnings', fmt(p.ot_earnings||0))}
-          <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Earnings</span><span>${fmt(grossTotal)}</span></div></div>
-        <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Deductions</div>
-          ${sr('Shortfall', fmt(p.shortfall_deduction||0))}${sr('Advances', fmt(advTotal))}${bonusCut > 0 ? sr('Bonus Contribution', fmt(bonusCut)) : ''}
-          <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Deductions</span><span>${fmt(deductions)}</span></div></div>
-      </div>
-      ${newBonusBal > 0 ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
-        <div><div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase">Bonus Pool Balance</div>
-          <div style="font-size:11px;color:#166534;margin-top:2px">Prev ₹${(bonus_balance||0).toLocaleString('en-IN')} + This month ₹${bonusAdd.toLocaleString('en-IN')}</div></div>
-        <div style="font-weight:800;font-size:18px;color:#15803d">₹${newBonusBal.toLocaleString('en-IN')}</div>
-      </div>` : ''}
-      <div style="background:${net < 0 ? '#dc2626' : '#2563eb'};color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-weight:700;font-size:15px">Net In-Hand</span><span style="font-weight:800;font-size:22px">${fmt(net)}</span>
-      </div>
-      ${net < 0 ? `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#dc2626;font-weight:500">
-        &#9888; ₹${Math.abs(net).toLocaleString('en-IN')} has been carried forward as advance for next month's payroll.
-      </div>` : ''}
-      ${advances.length ? `<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:8px">Advance Details</div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left">Date</th><th style="padding:8px 10px;text-align:right">Amount</th></tr></thead>
-          <tbody>${advances.map(a => `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px 10px">${fmtDate(a.date)}</td><td style="padding:8px 10px;text-align:right;font-weight:600">${fmt(Number(a.amount))}</td></tr>`).join('')}
-          <tr style="background:#f1f5f9"><td style="padding:8px 10px;font-weight:700">Total Deducted</td><td style="padding:8px 10px;text-align:right;font-weight:700">${fmt(advTotal)}</td></tr></tbody>
-        </table></div>` : ''}
-    </div>`;
-    this._downloadPDF(html, `Payslip_${State.empName}_${month}.pdf`);
+    const companyCont = parseInt(State.settings?.COMPANY_CONTRIBUTION||500);
+    const bonusAdd   = p.bonus_eligible ? (bonusCut + companyCont) : 0;
+    const newBonusBal = (bonus_balance||0) + bonusAdd;
+
+    let y = M;
+
+    // Header
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+    doc.text(State.empName, M, y+6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,116,139);
+    doc.text(`Pay Slip  |  ${month}`, M, y+13);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
+    doc.text('Mahitha Prasad', PW-M, y+6, {align:'right'});
+    if (p.adv_start_date && p.adv_end_date) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100,116,139);
+      doc.text(`Period: ${fmtDate(p.adv_start_date)} to ${fmtDate(p.adv_end_date)}`, PW-M, y+13, {align:'right'});
+    }
+    y += 20;
+    doc.setDrawColor(200,210,220); doc.setLineWidth(0.4); doc.line(M, y, PW-M, y); y += 6;
+
+    // Attendance + OT
+    doc.autoTable({
+      startY: y, margin: {left:M, right:M},
+      head: [['Attendance','','Overtime','']],
+      body: [
+        ['Total Days', String(p.TD??'--'), 'Weekday OT', fmtH(p.ot_weekday_min)],
+        ['Absent',     String(p.absent_days??'--'), 'Sunday OT',  fmtH(p.ot_sunday_min)],
+        ['Week Off',   String(p.week_off_days??'--'), 'Holiday OT', fmtH(p.ot_holiday_min)],
+      ],
+      theme: 'plain',
+      styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
+      headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
+      columnStyles: {
+        0:{textColor:[100,116,139], cellWidth:48}, 1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
+        2:{textColor:[100,116,139], cellWidth:48}, 3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+      }
+    });
+    y = doc.lastAutoTable.finalY + 4;
+    doc.setDrawColor(200,210,220); doc.line(M, y, PW-M, y); y += 6;
+
+    // Earnings + Deductions
+    const dedRows = [['Shortfall', Rs(p.shortfall_deduction||0)], ['Advances', Rs(advTotal)]];
+    if (bonusCut > 0) dedRows.push(['Bonus Contribution', Rs(bonusCut)]);
+    const earnRows = [['Gross Pay', Rs(p.gross_pay||0)], ['OT Earnings', Rs(p.ot_earnings||0)]];
+    const maxR = Math.max(earnRows.length, dedRows.length);
+    const edBody = [];
+    for (let i = 0; i < maxR; i++) edBody.push([earnRows[i]?.[0]??'', earnRows[i]?.[1]??'', dedRows[i]?.[0]??'', dedRows[i]?.[1]??'']);
+    edBody.push(['Total Earnings', Rs(grossTotal), 'Total Deductions', Rs(deductions)]);
+
+    doc.autoTable({
+      startY: y, margin: {left:M, right:M},
+      head: [['Earnings','','Deductions','']],
+      body: edBody,
+      theme: 'plain',
+      styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
+      headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
+      columnStyles: {
+        0:{textColor:[100,116,139], cellWidth:48}, 1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
+        2:{textColor:[100,116,139], cellWidth:48}, 3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+      },
+      didParseCell: (d) => { if (d.row.index === edBody.length-1) { d.cell.styles.fontStyle='bold'; d.cell.styles.textColor=[15,23,42]; } }
+    });
+    y = doc.lastAutoTable.finalY + 6;
+
+    // Bonus pool
+    if (newBonusBal > 0) {
+      doc.setFillColor(240,253,244); doc.roundedRect(M, y, CW, 12, 2, 2, 'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(21,128,61);
+      doc.text('Bonus Pool Balance', M+5, y+5);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(22,101,52);
+      doc.text(`Prev Rs.${(bonus_balance||0).toLocaleString('en-IN')} + This month Rs.${bonusAdd.toLocaleString('en-IN')}`, M+5, y+10);
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(21,128,61);
+      doc.text(`Rs. ${newBonusBal.toLocaleString('en-IN')}`, PW-M-5, y+8, {align:'right'});
+      y += 18;
+    }
+
+    // Net Pay
+    doc.setFillColor(net < 0 ? [220,38,38] : [37,99,235]);
+    doc.roundedRect(M, y, CW, 14, 2, 2, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
+    doc.text('Net In-Hand', M+5, y+9);
+    doc.setFontSize(14); doc.text(Rs(net), PW-M-5, y+9, {align:'right'});
+    y += 20;
+
+    // Advance details
+    if (advances.length) {
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(15,23,42);
+      doc.text('Advance Details', M, y); y += 4;
+      doc.autoTable({
+        startY: y, margin: {left:M, right:M},
+        head: [['Date','Amount']],
+        body: advances.map(a => [fmtDate(a.date), Rs(Number(a.amount))]),
+        foot: [['Total Deducted', Rs(advTotal)]],
+        theme: 'striped', styles: {fontSize:9},
+        headStyles: {fillColor:[241,245,249], textColor:[100,116,139]},
+        footStyles: {fillColor:[241,245,249], fontStyle:'bold', textColor:[15,23,42]},
+        columnStyles: {1:{halign:'right'}}
+      });
+    }
+
+    doc.save(`Payslip_${State.empName}_${month}.pdf`);
   },
 
   async sharePayslip() {
