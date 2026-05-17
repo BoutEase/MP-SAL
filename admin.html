@@ -3058,6 +3058,8 @@ Views.Bonus = {
 Views.Payments = {
   _run: [],
   _month: '',
+  _newDoc() { const { jsPDF } = window.jspdf; return new jsPDF({ unit:'mm', format:'a4' }); },
+  _Rs(n) { return 'Rs. ' + Number(n||0).toLocaleString('en-IN'); },
 
   async load() {
     const c = document.getElementById('view-payments');
