@@ -1982,13 +1982,26 @@ Views.Payroll = {
   },
 
   _downloadPDF(html, filename) {
-    html2pdf().set({
-      margin: 10,
-      filename: filename,
-      image: { type: 'jpeg', quality: 0.97 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    }).from(html, 'string').save();
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.75);z-index:10000;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:600;font-family:sans-serif;letter-spacing:.02em';
+    overlay.textContent = 'Generating PDF…';
+    document.body.appendChild(overlay);
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#fff;font-family:sans-serif;color:#0f172a;box-sizing:border-box;z-index:9999;padding:8px';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+
+    const cleanup = () => { wrap.remove(); overlay.remove(); };
+    setTimeout(() => {
+      html2pdf().set({
+        margin: 10,
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.97 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, allowTaint: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).from(wrap).save().then(cleanup).catch(e => { cleanup(); toast('PDF failed: ' + e.message, 'error'); });
+    }, 150);
   },
 
   async downloadPayslip(idx) {
