@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MP SAL Admin">
   <meta name="theme-color" content="#00D4D4">
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest-admin.json">
   <link rel="apple-touch-icon" href="icon.svg">
   <title>MP-SAL Admin</title>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -267,7 +267,7 @@
     .mp-mobile-nav { display: none; }
     @media (max-width: 768px) {
       .mp-sidebar { display: none; }
-      .mp-admin-main { padding: 12px 14px 80px; }
+      .mp-admin-main { padding: 12px 10px 80px; }
       .mp-mobile-nav {
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
         background: var(--surface); border-top: 1px solid var(--border);
@@ -281,7 +281,29 @@
       .mp-mobile-nav-item.active { color: var(--primary-dark); }
       .mp-mobile-nav-item svg { opacity: .6; }
       .mp-mobile-nav-item.active svg { opacity: 1; }
-      .mp-topbar { padding: 0 14px; }
+      .mp-topbar { padding: 0 10px; }
+
+      /* Tables — horizontal scroll */
+      .mp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+      /* Cards stack full width */
+      .card { border-radius: 10px; }
+
+      /* Buttons — bigger tap targets */
+      .btn { min-height: 38px; }
+      .btn-sm { min-height: 32px; font-size: 12px; }
+
+      /* Form fields — full width on mobile */
+      .field input, .field select, .field textarea { font-size: 16px; } /* prevents iOS zoom */
+
+      /* Modal — full screen on mobile */
+      #emp-modal-wrap > div { width: 100% !important; max-width: 100% !important; max-height: 100vh !important; border-radius: 0 !important; }
+
+      /* Detail panel — stack attendance + calc vertically */
+      .detail-grid { grid-template-columns: 1fr !important; }
+
+      /* Payslip grid — stack earnings/deductions */
+      .payslip-grid { grid-template-columns: 1fr !important; }
     }
   </style>
 </head>
@@ -1490,7 +1512,7 @@ Views.Payroll = {
           <td style="border-radius:0 4px 4px 0"></td></tr>`;
 
     return `
-    <div style="padding:16px;display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start">
+    <div style="padding:16px;display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start" class="detail-grid">
       <div>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted)">
           DAILY ATTENDANCE — ${emp?.name || p.emp_id} &nbsp;|&nbsp; ${p.month}
@@ -1907,7 +1929,7 @@ Views.Payroll = {
           <div style="font-weight:600">${period}</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Attendance</div>
           ${sr('Full Days', p.full_days)} ${sr('Half Days', p.half_days)}
           ${sr('Absent Days', p.absent_days)} ${sr('Week Off', p.week_off_days)}</div>

@@ -5,3 +5,8 @@
   from = "/admin"
   to = "/admin.html"
   status = 200
+
+[[redirects]]
+  from = "/manifest-admin.json"
+  to = "/manifest-admin.json"
+  status = 200
