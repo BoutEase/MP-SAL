@@ -3214,11 +3214,11 @@ Views.Payments = {
         </div>` : ''}
       </div>
 
-      ${run.some(r => r.net_pay < 0) ? `
+      ${run.some(r => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted')) ? `
       <div id="pay-neg-banner" style="background:var(--danger-light);border:1px solid var(--danger);border-radius:8px;padding:14px 16px;margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <span style="font-size:18px">🚨</span>
-          <strong style="color:var(--danger);font-size:14px">Negative Balance — ${run.filter(r => r.net_pay < 0).length} employee${run.filter(r => r.net_pay < 0).length > 1 ? 's' : ''} owe more than they earned</strong>
+          <strong style="color:var(--danger);font-size:14px">Negative Balance — ${run.filter(r => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted')).length} employee${run.filter(r => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted')).length > 1 ? 's' : ''} owe more than they earned</strong>
           <span style="flex:1"></span>
           <button onclick="document.getElementById('pay-neg-banner').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;line-height:1;padding:0">✕</button>
         </div>
@@ -3231,7 +3231,7 @@ Views.Payments = {
             <th style="padding:7px 10px"></th>
           </tr></thead>
           <tbody>
-            ${run.map((r, i) => r.net_pay < 0 ? `
+            ${run.map((r, i) => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted') ? `
             <tr style="border-top:1px solid rgba(220,53,69,.2)" id="pay-neg-row-${i}">
               <td data-label="Employee" style="padding:7px 10px;font-weight:600">${r.emp_name}</td>
               <td data-label="Balance" style="padding:7px 10px;text-align:right;font-weight:700;color:var(--danger)">${fmt(Math.abs(r.net_pay))}</td>
@@ -3383,7 +3383,7 @@ Views.Payments = {
         </div>` : ''}
       </div>` : ''}
 
-      ${payments.filter(p => p.emp_id !== '__DIST_BATCH__').length ? `
+      ${payments.filter(p => p.emp_id !== '__DIST_BATCH__' && p.notes !== 'neg_converted').length ? `
       <div class="card" style="padding:0;overflow:hidden">
         <div style="padding:12px 14px;background:var(--surface2);font-weight:600;font-size:14px">Payment History — ${this._month}</div>
         <div style="overflow-x:auto">
@@ -3398,7 +3398,7 @@ Views.Payments = {
               </tr>
             </thead>
             <tbody>
-              ${payments.filter(p=>p.emp_id!=='__DIST_BATCH__').sort((a,b)=>a.date_paid>b.date_paid?-1:1).map(p=>`
+              ${payments.filter(p=>p.emp_id!=='__DIST_BATCH__'&&p.notes!=='neg_converted').sort((a,b)=>a.date_paid>b.date_paid?-1:1).map(p=>`
               <tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:10px 8px">${p.date_paid}</td>
                 <td style="padding:10px 8px;font-weight:500">${p.emp_name}</td>
@@ -3421,24 +3421,16 @@ Views.Payments = {
     const amount = Math.abs(r.net_pay);
     try {
       await API.call('saveAdvance', {
-        advance_id:  null,
-        emp_id:      r.emp_id,
-        emp_name:    r.emp_name,
-        date,
-        amount,
-        status:      'Approved',
-        created_by:  'Previous Month Bal'
+        advance_id: null, emp_id: r.emp_id, emp_name: r.emp_name,
+        date, amount, status: 'Approved', created_by: 'Previous Month Bal'
       });
-      const negRow = document.getElementById('pay-neg-row-' + i);
-      if (negRow) {
-        negRow.innerHTML = `<td colspan="4" style="padding:10px 12px;color:#16a34a;font-weight:600;font-size:13px">
-          ✓ ${r.emp_name} — ₹${amount.toLocaleString('en-IN')} converted to carry-forward advance on ${date}
-        </td>`;
-      }
-      // Grey out the row in the payment run table
-      const payRow = document.getElementById('payrun-row-' + r.emp_id);
-      if (payRow) { payRow.style.background = ''; payRow.style.opacity = '.55'; }
+      // Save a zero-amount marker so banner stays hidden after page reload
+      await API.call('savePayment', {
+        emp_id: r.emp_id, emp_name: r.emp_name, month: this._month,
+        date_paid: date, amount: 0, mode: 'Carry Forward', notes: 'neg_converted'
+      });
       toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${r.emp_name}`, 'success');
+      this.onMonthChange(this._month);
     } catch(e) { toast(e.message, 'error'); }
   },
 
