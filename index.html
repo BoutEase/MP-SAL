@@ -265,7 +265,7 @@
     .mp-mobile-nav { display: none; }
     @media (max-width: 768px) {
       .mp-sidebar { display: none; }
-      .mp-admin-main { padding: 12px 14px 80px; }
+      .mp-admin-main { padding: 12px 10px 80px; }
       .mp-mobile-nav {
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
         background: var(--surface); border-top: 1px solid var(--border);
@@ -279,7 +279,20 @@
       .mp-mobile-nav-item.active { color: var(--primary-dark); }
       .mp-mobile-nav-item svg { opacity: .6; }
       .mp-mobile-nav-item.active svg { opacity: 1; }
-      .mp-topbar { padding: 0 14px; }
+      .mp-topbar { padding: 0 10px; }
+
+      /* Payslip grids — stack on mobile */
+      .payslip-grid { grid-template-columns: 1fr !important; }
+
+      /* Form inputs — 16px prevents iOS auto-zoom */
+      .field input, .field select, .field textarea { font-size: 16px; }
+
+      /* Buttons — minimum tap target */
+      .btn { min-height: 38px; }
+      .btn-sm { min-height: 32px; font-size: 12px; }
+
+      /* Tables — horizontal scroll */
+      .mp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     }
   </style>
 </head>
@@ -929,7 +942,7 @@ const EmployeeApp = {
             </div>
           </div>
 
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+          <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
             <div>
               <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Attendance</div>
               ${this._row('Total Days', p.TD)}
@@ -945,7 +958,7 @@ const EmployeeApp = {
           </div>
 
           <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:16px">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
               <div>
                 <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Earnings</div>
                 ${this._row('Gross Pay',   fmt(p.gross_pay || 0))}
@@ -1050,13 +1063,13 @@ const EmployeeApp = {
         <div style="text-align:right;font-size:13px"><div style="font-weight:700">Mahitha Prasad</div>
           <div style="color:#64748b">Advance Period</div><div style="font-weight:600">${period}</div></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Attendance</div>
           ${sr('Total Days', p.TD)}${sr('Absent', p.absent_days)}${sr('Week Off', p.week_off_days)}</div>
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Overtime</div>
           ${sr('Weekday OT', fmtHrs(p.ot_weekday_min))}${sr('Sunday OT', fmtHrs(p.ot_sunday_min))}${sr('Holiday OT', fmtHrs(p.ot_holiday_min))}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e2e8f0;padding-top:16px;margin-bottom:16px">
+      <div class="payslip-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #e2e8f0;padding-top:16px;margin-bottom:16px">
         <div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Earnings</div>
           ${sr('Gross Pay', fmt(p.gross_pay||0))}${sr('OT Earnings', fmt(p.ot_earnings||0))}
           <div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid #e2e8f0;font-weight:700"><span>Total Earnings</span><span>${fmt(grossTotal)}</span></div></div>
