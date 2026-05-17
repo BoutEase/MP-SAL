@@ -1034,14 +1034,14 @@ const EmployeeApp = {
 
   _downloadPDF(html, filename) {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:600px;background:#fff;font-family:sans-serif;color:#0f172a;box-sizing:border-box';
+    wrap.style.cssText = 'position:absolute;top:-9999px;left:0;width:700px;background:#fff;font-family:sans-serif;color:#0f172a;box-sizing:border-box;padding:8px';
     wrap.innerHTML = html;
     document.body.appendChild(wrap);
     html2pdf().set({
       margin: 10,
       filename: filename,
       image: { type: 'jpeg', quality: 0.97 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     }).from(wrap).save().then(() => document.body.removeChild(wrap));
   },
