@@ -267,19 +267,20 @@
     .mp-mobile-nav { display: none; }
     @media (max-width: 768px) {
       .mp-sidebar { display: none; }
-      .mp-admin-main { padding: 12px 10px 80px; }
+      .mp-admin-main { padding: 12px 10px 90px; }
       .mp-mobile-nav {
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
         background: var(--surface); border-top: 1px solid var(--border);
-        padding: 8px 4px env(safe-area-inset-bottom);
+        padding: 6px 4px max(env(safe-area-inset-bottom), 8px);
+        min-height: 60px;
       }
       .mp-mobile-nav-item {
-        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-        padding: 4px 2px; border: none; background: none; cursor: pointer;
-        font-size: 10px; font-weight: 600; color: var(--muted2); font-family: var(--font-sans);
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+        padding: 2px 2px; border: none; background: none; cursor: pointer;
+        font-size: 9px; font-weight: 600; color: var(--muted2); font-family: var(--font-sans);
       }
       .mp-mobile-nav-item.active { color: var(--primary-dark); }
-      .mp-mobile-nav-item svg { opacity: .6; }
+      .mp-mobile-nav-item svg { opacity: .6; flex-shrink: 0; }
       .mp-mobile-nav-item.active svg { opacity: 1; }
       .mp-topbar { padding: 0 10px; }
 
@@ -304,6 +305,26 @@
 
       /* Payslip grid — stack earnings/deductions */
       .payslip-grid { grid-template-columns: 1fr !important; }
+
+      /* Negative balance banner table — card layout */
+      .neg-banner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .neg-banner-table thead { display: none; }
+      .neg-banner-table tr { display: block; margin-bottom: 10px; border-radius: 6px; border: 1px solid rgba(220,53,69,.25); padding: 8px 10px; }
+      .neg-banner-table td { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border: none; }
+      .neg-banner-table td::before { content: attr(data-label); font-weight: 600; color: var(--danger); font-size: 11px; margin-right: 8px; }
+
+      /* Payment run table — card layout */
+      .pay-run-table { width: 100%; border-collapse: collapse; }
+      .pay-run-table thead { display: none; }
+      .pay-run-table tr { display: block; margin: 0 0 10px; border-radius: 8px; border: 1px solid var(--border); padding: 10px 12px; background: var(--surface); }
+      .pay-run-table tr[style*="opacity:.55"] { opacity: .55; }
+      .pay-run-table tr[style*="danger-light"] { background: var(--danger-light) !important; }
+      .pay-run-table td { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border: none; font-size: 13px; }
+      .pay-run-table td:first-child { justify-content: flex-start; gap: 8px; }
+      .pay-run-table td::before { content: attr(data-label); font-size: 11px; color: var(--muted); font-weight: 600; }
+      .pay-run-table td:first-child::before { display: none; }
+      .pay-run-table td input[type="number"] { width: 100px !important; }
+      .pay-run-table td select { width: auto; }
     }
   </style>
 </head>
@@ -1960,15 +1981,18 @@ Views.Payroll = {
     </div>`;
   },
 
-  _printHTML(html, title) {
-    const win = window.open('', '_blank');
-    if (!win) { toast('Allow pop-ups to print/save PDF', 'error'); return; }
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
-      <style>*{box-sizing:border-box}body{margin:0;font-family:sans-serif;background:#fff;color:#0f172a}
-      @media print{body{margin:0}@page{margin:10mm}}</style></head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 400);
+  _downloadPDF(html, filename) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:600px;background:#fff;font-family:sans-serif;color:#0f172a;box-sizing:border-box';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    html2pdf().set({
+      margin: 10,
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.97 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(wrap).save().then(() => document.body.removeChild(wrap));
   },
 
   async downloadPayslip(idx) {
@@ -1976,7 +2000,7 @@ Views.Payroll = {
     const emp = State.employees.find(e => e.emp_id === p.emp_id) || { name: p.emp_id, team: '' };
     const advances = State.advances.filter(a => a.emp_id === p.emp_id);
     const html = this._slipHTML(p, emp, advances);
-    this._printHTML(html, `Payslip – ${emp.name} (${p.month})`);
+    this._downloadPDF(html, `Payslip_${emp.name}_${p.month}.pdf`);
   },
 
   async sharePayslip(idx) {
@@ -3097,7 +3121,7 @@ Views.Payments = {
           <button onclick="document.getElementById('pay-neg-banner').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;line-height:1;padding:0">✕</button>
         </div>
         <p style="font-size:13px;color:var(--danger);margin:0 0 12px">These employees took advance exceeding their salary. Select a date and convert each to a carried-forward advance — it will be deducted in the next payroll.</p>
-        <table style="width:100%;border-collapse:collapse;font-size:13px;max-width:600px">
+        <table class="neg-banner-table" style="width:100%;border-collapse:collapse;font-size:13px;max-width:600px">
           <thead><tr style="background:rgba(220,53,69,.12)">
             <th style="padding:7px 10px;text-align:left;color:var(--danger)">Employee</th>
             <th style="padding:7px 10px;text-align:right;color:var(--danger)">Negative Balance</th>
@@ -3107,9 +3131,9 @@ Views.Payments = {
           <tbody>
             ${run.map((r, i) => r.net_pay < 0 ? `
             <tr style="border-top:1px solid rgba(220,53,69,.2)" id="pay-neg-row-${i}">
-              <td style="padding:7px 10px;font-weight:600">${r.emp_name}</td>
-              <td style="padding:7px 10px;text-align:right;font-weight:700;color:var(--danger)">${fmt(Math.abs(r.net_pay))}</td>
-              <td style="padding:7px 10px;text-align:center">
+              <td data-label="Employee" style="padding:7px 10px;font-weight:600">${r.emp_name}</td>
+              <td data-label="Balance" style="padding:7px 10px;text-align:right;font-weight:700;color:var(--danger)">${fmt(Math.abs(r.net_pay))}</td>
+              <td data-label="Date" style="padding:7px 10px;text-align:center">
                 <input type="date" id="pay-neg-date-${i}" value="${new Date().toISOString().split('T')[0]}"
                   style="padding:4px 8px;font-size:12px;width:auto;border-color:var(--danger)" />
               </td>
@@ -3136,8 +3160,8 @@ Views.Payments = {
           </label>
           <button class="btn btn-primary btn-sm" onclick="Views.Payments.recordSelected()">✓ Record Selected</button>
         </div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <div style="overflow-x:auto;padding:8px">
+          <table class="pay-run-table" style="width:100%;border-collapse:collapse;font-size:13px">
             <thead style="background:var(--surface)">
               <tr>
                 <th style="padding:10px 8px;width:36px"></th>
@@ -3158,18 +3182,18 @@ Views.Payments = {
                 return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${r.emp_id}">
                   <td style="padding:10px 8px;text-align:center">
                     <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
+                    <span style="font-weight:600;font-size:13px">${r.emp_name}</span>
                   </td>
-                  <td style="padding:10px 8px;font-weight:500">${r.emp_name}</td>
-                  <td style="padding:10px 8px;text-align:right;${isNeg?'color:var(--danger);font-weight:700':''}">${fmt(r.net_pay)}</td>
-                  <td style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid>0?fmt(r.already_paid):'—'}</td>
-                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg?'var(--danger)':rem>0?'var(--danger)':'var(--success)'}">
+                  <td data-label="Net Pay" style="padding:10px 8px;text-align:right;${isNeg?'color:var(--danger);font-weight:700':''}">${fmt(r.net_pay)}</td>
+                  <td data-label="Paid" style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid>0?fmt(r.already_paid):'—'}</td>
+                  <td data-label="Remaining" style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg?'var(--danger)':rem>0?'var(--danger)':'var(--success)'}">
                     ${isNeg ? '⚠ Negative' : rem > 0 ? fmt(rem) : '✓ Paid'}
                   </td>
-                  <td style="padding:10px 8px;text-align:right">
+                  <td data-label="Amount" style="padding:10px 8px;text-align:right">
                     <input type="number" id="pay-amt-${r.emp_id}" value="${rem>0&&!isNeg?rem:''}" min="0"
                       style="width:90px;padding:4px 6px;font-size:13px;text-align:right" ${(isPaid||isNeg)?'disabled':''} />
                   </td>
-                  <td style="padding:10px 8px;text-align:center">
+                  <td data-label="Mode" style="padding:10px 8px;text-align:center">
                     <select id="pay-mode-${r.emp_id}" style="padding:4px 6px;font-size:12px;width:auto" ${(isPaid||isNeg)?'disabled':''}>
                       <option>UPI</option><option>Cash</option><option>PhonePe</option>
                     </select>
@@ -3304,12 +3328,15 @@ Views.Payments = {
         status:      'Approved',
         created_by:  'Previous Month Bal'
       });
-      document.getElementById('pay-neg-row-' + i)?.remove();
-      const remaining = document.querySelectorAll('[id^="pay-neg-row-"]').length;
-      if (!remaining) document.getElementById('pay-neg-banner')?.remove();
+      const negRow = document.getElementById('pay-neg-row-' + i);
+      if (negRow) {
+        negRow.innerHTML = `<td colspan="4" style="padding:10px 12px;color:#16a34a;font-weight:600;font-size:13px">
+          ✓ ${r.emp_name} — ₹${amount.toLocaleString('en-IN')} converted to carry-forward advance on ${date}
+        </td>`;
+      }
       // Grey out the row in the payment run table
-      const row = document.getElementById('payrun-row-' + i);
-      if (row) { row.style.background = ''; row.style.opacity = '.55'; }
+      const payRow = document.getElementById('payrun-row-' + r.emp_id);
+      if (payRow) { payRow.style.background = ''; payRow.style.opacity = '.55'; }
       toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${r.emp_name}`, 'success');
     } catch(e) { toast(e.message, 'error'); }
   },
@@ -3390,35 +3417,26 @@ Views.Payments = {
         <td style="padding:9px 12px;font-size:14px">${r.emp_name}</td>
         <td style="padding:9px 12px;text-align:right;font-size:14px;font-weight:600">₹${r.net_pay.toLocaleString('en-IN')}</td>
       </tr>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8">
-      <title>Distributor List — ${this._month}</title>
-      <style>
-        body{font-family:Arial,sans-serif;padding:32px;max-width:500px;margin:0 auto}
-        h2{margin:0 0 4px;font-size:20px}
-        p{margin:0 0 20px;color:#64748b;font-size:13px}
-        table{width:100%;border-collapse:collapse}
-        thead th{padding:9px 12px;text-align:left;background:#f1f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
-        thead th:last-child{text-align:right}
-        tfoot td{padding:10px 12px;font-weight:700;font-size:15px;background:#f1f5f9}
-        tfoot td:last-child{text-align:right}
-        @media print{button{display:none}}
-      </style></head><body>
-      <h2>MP SAL — Distributor Payment List</h2>
-      <p>${this._month} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-IN')}</p>
-      <table>
-        <thead><tr><th>Employee</th><th style="text-align:right">Amount</th></tr></thead>
+    const html = `<div style="font-family:Arial,sans-serif;padding:32px;max-width:500px;margin:0 auto">
+      <h2 style="margin:0 0 4px;font-size:20px">MP SAL — Distributor Payment List</h2>
+      <p style="margin:0 0 20px;color:#64748b;font-size:13px">${this._month} · Generated ${new Date().toLocaleDateString('en-IN')}</p>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:#f1f5f9">
+          <th style="padding:9px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Employee</th>
+          <th style="padding:9px 12px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Amount</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><td>Total</td><td>₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+        <tfoot><tr style="background:#f1f5f9">
+          <td style="padding:10px 12px;font-weight:700;font-size:15px">Total</td>
+          <td style="padding:10px 12px;font-weight:700;font-size:15px;text-align:right">₹${total.toLocaleString('en-IN')}</td>
+        </tr></tfoot>
       </table>
-      <br><br>
-      <div style="display:flex;justify-content:space-between;margin-top:40px;font-size:13px;color:#64748b">
+      <div style="display:flex;justify-content:space-between;margin-top:50px;font-size:13px;color:#64748b">
         <div>Prepared by: _______________</div>
         <div>Distributor sign: _______________</div>
       </div>
-      <br><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer">🖨 Print / Save PDF</button>
-      </body></html>`;
-    const w = window.open('', '_blank', 'width=560,height=700');
-    w.document.write(html); w.document.close();
+    </div>`;
+    this._downloadPDF(html, `Distributor_List_${this._month}.pdf`);
   },
 
   downloadOverallPDF() {
@@ -3435,30 +3453,23 @@ Views.Payments = {
         <td style="padding:9px 12px;text-align:right;font-size:14px;font-weight:600">₹${r.net_pay.toLocaleString('en-IN')}</td>
       </tr>`;
     }).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8">
-      <title>Salary Statement — ${this._month}</title>
-      <style>
-        body{font-family:Arial,sans-serif;padding:32px;max-width:600px;margin:0 auto}
-        h2{margin:0 0 4px;font-size:20px}
-        p{margin:0 0 20px;color:#64748b;font-size:13px}
-        table{width:100%;border-collapse:collapse}
-        thead th{padding:9px 12px;text-align:left;background:#f1f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
-        thead th:last-child{text-align:right}
-        tfoot td{padding:10px 12px;font-weight:700;font-size:15px;background:#f1f5f9}
-        tfoot td:last-child{text-align:right}
-        @media print{button{display:none}}
-      </style></head><body>
-      <h2>MP SAL — Salary Statement</h2>
-      <p>${this._month} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-IN')} &nbsp;·&nbsp; ${eligible.length} employees</p>
-      <table>
-        <thead><tr><th>Employee</th><th>Batch</th><th style="text-align:right">Net Pay</th></tr></thead>
+    const html = `<div style="font-family:Arial,sans-serif;padding:32px;max-width:600px;margin:0 auto">
+      <h2 style="margin:0 0 4px;font-size:20px">MP SAL — Salary Statement</h2>
+      <p style="margin:0 0 20px;color:#64748b;font-size:13px">${this._month} · Generated ${new Date().toLocaleDateString('en-IN')} · ${eligible.length} employees</p>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:#f1f5f9">
+          <th style="padding:9px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Employee</th>
+          <th style="padding:9px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Batch</th>
+          <th style="padding:9px 12px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b">Net Pay</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="2">Total</td><td>₹${total.toLocaleString('en-IN')}</td></tr></tfoot>
+        <tfoot><tr style="background:#f1f5f9">
+          <td colspan="2" style="padding:10px 12px;font-weight:700;font-size:15px">Total</td>
+          <td style="padding:10px 12px;font-weight:700;font-size:15px;text-align:right">₹${total.toLocaleString('en-IN')}</td>
+        </tr></tfoot>
       </table>
-      <br><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer">🖨 Print / Save PDF</button>
-      </body></html>`;
-    const w = window.open('', '_blank', 'width=620,height=750');
-    w.document.write(html); w.document.close();
+    </div>`;
+    this._downloadPDF(html, `Salary_Statement_${this._month}.pdf`);
   },
 
   async remove(paymentId) {
