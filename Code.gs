@@ -733,9 +733,11 @@ function getPayments(month) {
   const sheet = getSheet('Payments');
   var rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; })
     .map(function(r) {
+      var m = r[3] instanceof Date ? Utilities.formatDate(r[3], 'Asia/Kolkata', 'yyyy-MM') : String(r[3]).substring(0, 7);
+      var d = r[4] instanceof Date ? Utilities.formatDate(r[4], 'Asia/Kolkata', 'yyyy-MM-dd') : String(r[4]).substring(0, 10);
       return {
         payment_id: r[0], emp_id: r[1], emp_name: r[2],
-        month: r[3], date_paid: r[4], amount: Number(r[5]),
+        month: m, date_paid: d, amount: Number(r[5]),
         mode: r[6], notes: r[7]
       };
     });
