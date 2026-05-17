@@ -3112,6 +3112,21 @@ Views.Payments = {
       }
       this._advances  = advances;
       this._payments  = payRes.data || [];
+
+      // Check which negative-balance employees already have a carry-forward advance
+      const negEmps = this._run.filter(r => r.net_pay < 0);
+      if (negEmps.length) {
+        const checks = await Promise.all(
+          negEmps.map(r => API.call('getAdvances', { emp_id: r.emp_id, status: 'Approved' }))
+        );
+        this._negConverted = new Set(
+          negEmps.filter((r, i) => (checks[i].data || []).some(a => a.created_by === 'Previous Month Bal'))
+                 .map(r => r.emp_id)
+        );
+      } else {
+        this._negConverted = new Set();
+      }
+
       this.render(this._run, this._payments);
     } catch(e) { toast(e.message, 'error'); }
   },
@@ -3214,11 +3229,11 @@ Views.Payments = {
         </div>` : ''}
       </div>
 
-      ${run.some(r => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted')) ? `
+      ${run.some(r => r.net_pay < 0 && !this._negConverted.has(r.emp_id)) ? `
       <div id="pay-neg-banner" style="background:var(--danger-light);border:1px solid var(--danger);border-radius:8px;padding:14px 16px;margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <span style="font-size:18px">🚨</span>
-          <strong style="color:var(--danger);font-size:14px">Negative Balance — ${run.filter(r => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted')).length} employee${run.filter(r => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted')).length > 1 ? 's' : ''} owe more than they earned</strong>
+          <strong style="color:var(--danger);font-size:14px">Negative Balance — ${run.filter(r => r.net_pay < 0 && !this._negConverted.has(r.emp_id)).length} employee${run.filter(r => r.net_pay < 0 && !this._negConverted.has(r.emp_id)).length > 1 ? 's' : ''} owe more than they earned</strong>
           <span style="flex:1"></span>
           <button onclick="document.getElementById('pay-neg-banner').remove()" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;line-height:1;padding:0">✕</button>
         </div>
@@ -3231,7 +3246,7 @@ Views.Payments = {
             <th style="padding:7px 10px"></th>
           </tr></thead>
           <tbody>
-            ${run.map((r, i) => r.net_pay < 0 && !payments.find(p => p.emp_id === r.emp_id && p.notes === 'neg_converted') ? `
+            ${run.map((r, i) => r.net_pay < 0 && !this._negConverted.has(r.emp_id) ? `
             <tr style="border-top:1px solid rgba(220,53,69,.2)" id="pay-neg-row-${i}">
               <td data-label="Employee" style="padding:7px 10px;font-weight:600">${r.emp_name}</td>
               <td data-label="Balance" style="padding:7px 10px;text-align:right;font-weight:700;color:var(--danger)">${fmt(Math.abs(r.net_pay))}</td>
@@ -3423,11 +3438,6 @@ Views.Payments = {
       await API.call('saveAdvance', {
         advance_id: null, emp_id: r.emp_id, emp_name: r.emp_name,
         date, amount, status: 'Approved', created_by: 'Previous Month Bal'
-      });
-      // Save a zero-amount marker so banner stays hidden after page reload
-      await API.call('savePayment', {
-        emp_id: r.emp_id, emp_name: r.emp_name, month: this._month,
-        date_paid: date, amount: 0, mode: 'Carry Forward', notes: 'neg_converted'
       });
       toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${r.emp_name}`, 'success');
       this.onMonthChange(this._month);
