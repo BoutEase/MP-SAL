@@ -274,7 +274,7 @@
       .mp-mobile-nav {
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
         background: var(--surface); border-top: 1px solid var(--border);
-        padding: 0 0 max(env(safe-area-inset-bottom), 6px);
+        padding: max(env(safe-area-inset-top), 0px) max(env(safe-area-inset-right), 8px) max(env(safe-area-inset-bottom), 6px) max(env(safe-area-inset-left), 8px);
         min-height: 64px;
         box-shadow: 0 -2px 16px rgba(0,0,0,.08);
       }
@@ -340,7 +340,7 @@
       .pay-mob-card.done { opacity: .6; pointer-events: none; }
       .pay-mob-hdr { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface2); border-bottom: 1px solid var(--border); }
       .pay-mob-card.neg .pay-mob-hdr { background: var(--danger-light); border-bottom-color: rgba(220,53,69,.25); }
-      .pay-mob-name { font-weight: 700; font-size: 15px; flex: 1; color: var(--text); }
+      .pay-mob-name { display: block; font-weight: 700; font-size: 15px; flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .pay-mob-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; border-bottom: 1px solid rgba(0,0,0,.04); font-size: 13px; }
       .pay-mob-row:last-child { border-bottom: none; padding-bottom: 13px; }
       .pay-mob-row > span:first-child { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
