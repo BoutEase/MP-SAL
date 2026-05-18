@@ -274,10 +274,15 @@
       .mp-mobile-nav {
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
         background: var(--surface); border-top: 1px solid var(--border);
-        padding: max(env(safe-area-inset-top), 0px) max(env(safe-area-inset-right), 8px) max(env(safe-area-inset-bottom), 6px) max(env(safe-area-inset-left), 8px);
+        padding-top: 0;
+        padding-bottom: env(safe-area-inset-bottom, 6px);
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
         min-height: 64px;
         box-shadow: 0 -2px 16px rgba(0,0,0,.08);
       }
+      .mp-mobile-nav-item:first-child { padding-left: 12px; }
+      .mp-mobile-nav-item:last-child  { padding-right: 12px; }
       .mp-mobile-nav-item {
         flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
         gap: 4px; padding: 10px 4px 6px; border: none; background: none; cursor: pointer;
@@ -3336,10 +3341,11 @@ Views.Payments = {
                                : isPaid  ? `<span class="pay-badge paid">✓ Paid</span>`
                                : isNeg   ? `<span class="pay-badge neg">Negative</span>`
                                :           `<span class="pay-badge pend">Pending</span>`;
+              const hdrBg = isCfwd ? 'rgba(20,184,166,.1)' : isNeg ? 'var(--danger-light)' : 'var(--surface2)';
               return `<div class="pay-mob-card ${isCfwd?'cfwd':isNeg?'neg':isPaid?'done':''}" id="payrun-row-${r.emp_id}">
-                <div class="pay-mob-hdr">
-                  <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
-                  <strong class="pay-mob-name">${r.emp_name}</strong>
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:${hdrBg};border-bottom:1px solid var(--border);">
+                  <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} style="flex-shrink:0" />
+                  <span style="flex:1;min-width:0;font-weight:700;font-size:15px;color:#0F2F2F;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.emp_name}</span>
                   ${badge}
                 </div>
                 <div class="pay-mob-row"><span>Net Pay</span><span style="font-weight:700;${isNeg?'color:var(--danger)':''}">${fmt(r.net_pay)}</span></div>
