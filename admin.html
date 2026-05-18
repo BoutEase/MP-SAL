@@ -3341,12 +3341,14 @@ Views.Payments = {
                                : isPaid  ? `<span class="pay-badge paid">✓ Paid</span>`
                                : isNeg   ? `<span class="pay-badge neg">Negative</span>`
                                :           `<span class="pay-badge pend">Pending</span>`;
-              const hdrBg = isCfwd ? 'rgba(20,184,166,.1)' : isNeg ? 'var(--danger-light)' : 'var(--surface2)';
+              const hdrBg = isCfwd ? 'rgba(20,184,166,.1)' : isNeg ? '#fef2f2' : '#EAF9F9';
               return `<div class="pay-mob-card ${isCfwd?'cfwd':isNeg?'neg':isPaid?'done':''}" id="payrun-row-${r.emp_id}">
-                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:${hdrBg};border-bottom:1px solid var(--border);">
-                  <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} style="flex-shrink:0" />
-                  <span style="flex:1;min-width:0;font-weight:700;font-size:15px;color:#0F2F2F;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.emp_name}</span>
-                  ${badge}
+                <div style="padding:10px 14px 8px;background:${hdrBg};border-bottom:1px solid #e5e7eb">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
+                    ${badge}
+                  </div>
+                  <div style="font-size:16px;font-weight:700;color:#111827;line-height:1.2">${r.emp_name}</div>
                 </div>
                 <div class="pay-mob-row"><span>Net Pay</span><span style="font-weight:700;${isNeg?'color:var(--danger)':''}">${fmt(r.net_pay)}</span></div>
                 <div class="pay-mob-row"><span>Paid</span><span style="color:${r.already_paid>0?'var(--success)':'var(--muted)'}">${r.already_paid>0?fmt(r.already_paid):'—'}</span></div>
