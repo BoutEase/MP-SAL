@@ -267,6 +267,7 @@
     /* ── Mobile bottom nav ── */
     .mp-mobile-nav { display: none; }
     .pay-status-badge { display: none; }
+    .pay-emp-name { font-weight: 600; font-size: 13px; margin-left: 6px; }
     @media (max-width: 768px) {
       .mp-sidebar { display: none; }
       .mp-admin-main { padding: 12px 10px 90px; }
@@ -333,20 +334,46 @@
       }
       .pay-run-table tr[style*="opacity:.55"] { opacity: .6; }
       .pay-run-table tr[style*="danger-light"] { border-color: rgba(220,53,69,.35) !important; }
-      /* Card header — inner div */
-      .pay-card-hdr {
-        display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-        background: var(--surface2); border-bottom: 1px solid var(--border);
+      /* Card header: first td — name via ::before, checkbox + badge below */
+      .pay-run-table td:first-child {
+        display: block !important;
+        padding: 0 !important;
+        background: var(--surface2);
+        border-bottom: 1px solid var(--border);
       }
-      .pay-card-name { font-weight: 700; font-size: 15px; flex: 1; color: var(--text); }
+      .pay-run-table tr[style*="danger-light"] td:first-child {
+        background: var(--danger-light) !important;
+        border-bottom-color: rgba(220,53,69,.25) !important;
+      }
+      /* Employee name injected from data-label attribute */
+      .pay-run-table td:first-child::before {
+        content: attr(data-label);
+        display: block;
+        padding: 12px 14px 4px;
+        font-size: 15px; font-weight: 700; color: var(--text);
+      }
+      /* Clearfix for floated badge */
+      .pay-run-table td:first-child::after { content: ''; display: table; clear: both; }
+      /* Checkbox sizing */
+      .pay-run-table td:first-child input[type="checkbox"] {
+        width: 16px; height: 16px; margin: 6px 8px 12px 14px; vertical-align: middle; cursor: pointer;
+      }
+      /* Status badge floated right inside header */
+      .pay-status-badge {
+        display: inline-flex; align-items: center; float: right;
+        font-size: 10px; font-weight: 700; padding: 3px 9px;
+        border-radius: 20px; letter-spacing: .03em;
+        text-transform: uppercase; white-space: nowrap;
+        margin: 6px 14px 12px 0;
+      }
+      /* Hide name span on mobile — name shown via ::before */
+      .pay-emp-name { display: none; }
       /* Card body rows */
       .pay-run-table td {
         display: flex; justify-content: space-between; align-items: center;
         padding: 9px 14px; border: none;
         border-bottom: 1px solid rgba(0,0,0,.04); font-size: 13px;
       }
-      .pay-run-table td:first-child { display: block !important; padding: 0 !important; border-bottom: none; }
-      .pay-run-table td:first-child::before { display: none; }
       .pay-run-table td:last-child { border-bottom: none; padding-bottom: 13px; }
       .pay-run-table td::before {
         content: attr(data-label); font-size: 11px; color: var(--muted);
@@ -359,13 +386,6 @@
       }
       /* Mode select */
       .pay-run-table td select { padding: 7px 10px; font-size: 13px; border-radius: 8px; width: auto; }
-      /* Status badge — shown only on mobile */
-      .pay-status-badge {
-        display: inline-flex; align-items: center;
-        font-size: 10px; font-weight: 700;
-        padding: 3px 9px; border-radius: 20px; letter-spacing: .03em;
-        text-transform: uppercase; white-space: nowrap;
-      }
     }
   </style>
 </head>
@@ -3153,17 +3173,21 @@ Views.Payments = {
       this._advances  = advances;
       this._payments  = payRes.data || [];
 
-      // Check which negative-balance employees already have a carry-forward advance
+      // Check which negative-balance employees have already been handled
       const negEmps = this._run.filter(r => r.net_pay < 0);
       if (negEmps.length) {
+        // Method 1: localStorage (works immediately, device-specific)
+        const lsDone = negEmps.filter(r =>
+          localStorage.getItem(`mpsal_neg_${month}_${r.emp_id}`)
+        ).map(r => r.emp_id);
+        // Method 2: advance sheet — check for created_by marker (trimmed)
         const checks = await Promise.all(
           negEmps.map(r => API.call('getAdvances', { emp_id: r.emp_id, status: 'Approved' }))
         );
-        this._negConverted = new Set(
-          negEmps.filter((r, i) => (checks[i].data || []).some(a =>
-            a.created_by === 'Previous Month Bal' || Number(a.amount) === Math.abs(r.net_pay)
-          )).map(r => r.emp_id)
-        );
+        const advDone = negEmps.filter((r, i) =>
+          (checks[i].data || []).some(a => (String(a.created_by || '')).trim() === 'Previous Month Bal')
+        ).map(r => r.emp_id);
+        this._negConverted = new Set([...lsDone, ...advDone]);
       } else {
         this._negConverted = new Set();
       }
@@ -3296,8 +3320,12 @@ Views.Payments = {
                   style="padding:4px 8px;font-size:12px;width:auto;border-color:var(--danger)" />
               </td>
               <td style="padding:7px 10px;text-align:center">
-                <button class="btn btn-sm" style="background:var(--danger);color:#fff;border-color:var(--danger)"
-                  onclick="Views.Payments.convertNegative(${i})">Convert to Advance</button>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
+                  <button class="btn btn-sm" style="background:var(--danger);color:#fff;border-color:var(--danger)"
+                    onclick="Views.Payments.convertNegative(${i})">Convert to Advance</button>
+                  <button class="btn btn-sm btn-secondary"
+                    onclick="Views.Payments.dismissNegative(${i})" title="Mark as already handled">✓ Already Done</button>
+                </div>
               </td>
             </tr>` : '').join('')}
           </tbody>
@@ -3337,17 +3365,15 @@ Views.Payments = {
                 const isPaid = !isNeg && rem <= 0;
                 const rowStyle = isPaid ? 'opacity:.55' : isNeg ? 'background:var(--danger-light)' : '';
                 return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${r.emp_id}">
-                  <td>
-                    <div class="pay-card-hdr">
-                      <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
-                      <span class="pay-card-name">${r.emp_name}</span>
-                      ${isPaid
-                        ? `<span class="pay-status-badge" style="background:#d1fae5;color:#065f46">✓ Paid</span>`
-                        : isNeg
-                          ? `<span class="pay-status-badge" style="background:#fee2e2;color:#991b1b">Negative</span>`
-                          : `<span class="pay-status-badge" style="background:#fef3c7;color:#92400e">Pending</span>`
-                      }
-                    </div>
+                  <td data-label="${r.emp_name}" style="padding:8px 10px">
+                    <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
+                    <span class="pay-emp-name">${r.emp_name}</span>
+                    ${isPaid
+                      ? `<span class="pay-status-badge" style="background:#d1fae5;color:#065f46">✓ Paid</span>`
+                      : isNeg
+                        ? `<span class="pay-status-badge" style="background:#fee2e2;color:#991b1b">Negative</span>`
+                        : `<span class="pay-status-badge" style="background:#fef3c7;color:#92400e">Pending</span>`
+                    }
                   </td>
                   <td data-label="Net Pay" style="padding:10px 8px;text-align:right;${isNeg?'color:var(--danger);font-weight:700':''}">${fmt(r.net_pay)}</td>
                   <td data-label="Paid" style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid>0?fmt(r.already_paid):'—'}</td>
@@ -3488,9 +3514,17 @@ Views.Payments = {
         advance_id: null, emp_id: r.emp_id, emp_name: r.emp_name,
         date, amount, status: 'Approved', created_by: 'Previous Month Bal'
       });
+      localStorage.setItem(`mpsal_neg_${this._month}_${r.emp_id}`, '1');
       toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${r.emp_name}`, 'success');
       this.onMonthChange(this._month);
     } catch(e) { toast(e.message, 'error'); }
+  },
+
+  dismissNegative(i) {
+    const r = this._run[i];
+    localStorage.setItem(`mpsal_neg_${this._month}_${r.emp_id}`, '1');
+    toast(`${r.emp_name} marked as handled`, 'success');
+    this.onMonthChange(this._month);
   },
 
   toggleAll(checked) {
