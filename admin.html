@@ -1298,7 +1298,7 @@ Views.Payroll = {
               <input type="date" id="carry-date-${idx}" value="${new Date().toISOString().split('T')[0]}"
                 style="padding:4px 8px;font-size:13px;width:auto" />
             </div>
-            <button class="btn btn-primary btn-sm" onclick="Views.Payroll.confirmCarryForward(${idx})">Confirm &amp; Save</button>
+            <button id="carry-btn-${idx}" class="btn btn-primary btn-sm" onclick="Views.Payroll.confirmCarryForward(${idx})">Confirm &amp; Save</button>
             <button class="btn btn-secondary btn-sm" onclick="document.getElementById('prow-carry-${idx}').classList.add('hidden')">Cancel</button>
           </div>
         </td>
@@ -1368,9 +1368,12 @@ Views.Payroll = {
   },
 
   async confirmCarryForward(idx) {
+    const btn = document.getElementById('carry-btn-' + idx);
+    if (btn?.disabled) return;
+    if (btn) btn.disabled = true;
     const p    = State.payroll[idx];
     const date = document.getElementById('carry-date-' + idx)?.value;
-    if (!date) { toast('Select a date', 'error'); return; }
+    if (!date) { toast('Select a date', 'error'); if (btn) btn.disabled = false; return; }
     const amount = Math.abs(p.net_pay);
     const emp    = State.employees.find(e => e.emp_id === p.emp_id);
     try {
@@ -1387,13 +1390,16 @@ Views.Payroll = {
       p.net_pay = 0;
       this.renderTable(State.payroll);
       toast(`₹${amount.toLocaleString('en-IN')} carried forward as advance for ${emp?.name || p.emp_id}`, 'success');
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) { toast(e.message, 'error'); if (btn) btn.disabled = false; }
   },
 
   async confirmCarryForwardFromBanner(idx) {
+    const btn = document.getElementById('neg-carry-btn-' + idx);
+    if (btn?.disabled) return;
+    if (btn) btn.disabled = true;
     const p    = State.payroll[idx];
     const date = document.getElementById('neg-date-' + idx)?.value;
-    if (!date) { toast('Select a date', 'error'); return; }
+    if (!date) { toast('Select a date', 'error'); if (btn) btn.disabled = false; return; }
     const amount = Math.abs(p.net_pay);
     const emp    = State.employees.find(e => e.emp_id === p.emp_id);
     try {
@@ -1413,7 +1419,7 @@ Views.Payroll = {
       if (!remaining) document.getElementById('negative-bal-banner')?.remove();
       this.renderTable(State.payroll);
       toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${emp?.name || p.emp_id}`, 'success');
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) { toast(e.message, 'error'); if (btn) btn.disabled = false; }
   },
 
   _dayCalc(day, hourly, settings, holidayDates) {
@@ -3288,7 +3294,7 @@ Views.Payments = {
               </td>
               <td style="padding:7px 10px;text-align:center">
                 <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
-                  <button class="btn btn-sm" style="background:var(--danger);color:#fff;border-color:var(--danger)"
+                  <button id="pay-neg-conv-btn-${i}" class="btn btn-sm" style="background:var(--danger);color:#fff;border-color:var(--danger)"
                     onclick="Views.Payments.convertNegative(${i})">Convert to Advance</button>
                   <button class="btn btn-sm btn-secondary"
                     onclick="Views.Payments.dismissNegative(${i})" title="Mark as already handled">✓ Already Done</button>
@@ -3489,9 +3495,12 @@ Views.Payments = {
   },
 
   async convertNegative(i) {
+    const btn = document.getElementById('pay-neg-conv-btn-' + i);
+    if (btn?.disabled) return;
+    if (btn) btn.disabled = true;
     const r    = this._run[i];
     const date = document.getElementById('pay-neg-date-' + i)?.value;
-    if (!date) { toast('Select a date', 'error'); return; }
+    if (!date) { toast('Select a date', 'error'); if (btn) btn.disabled = false; return; }
     const amount = Math.abs(r.net_pay);
     try {
       await API.call('saveAdvance', {
@@ -3501,7 +3510,7 @@ Views.Payments = {
       localStorage.setItem(`mpsal_neg_${this._month}_${r.emp_id}`, '1');
       toast(`₹${amount.toLocaleString('en-IN')} carried forward for ${r.emp_name}`, 'success');
       this.onMonthChange(this._month);
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) { toast(e.message, 'error'); if (btn) btn.disabled = false; }
   },
 
   dismissNegative(i) {

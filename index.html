@@ -668,39 +668,53 @@ const ManagerApp = {
   },
 
   async submit() {
+    if (this._submitting) return;
     const date = document.getElementById('m-date')?.value;
     if (!date) { toast('Select a date', 'error'); return; }
 
-    // Fresh fetch before processing so existing advances are always current
-    try {
-      const r = await API.call('getAdvances', { start_date: date, end_date: date });
-      this.dateAdvances = r.data || [];
-    } catch(e) { toast(e.message, 'error'); return; }
+    const btn = document.querySelector('button.btn-primary[onclick="ManagerApp.submit()"]');
+    this._submitting = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
-    const emps = State.employees.filter(e => e.status === 'Active');
-    // Build task functions (not Promises) so saves execute one-at-a-time,
-    // preventing race conditions in concurrent appendRow / setValues on the sheet.
-    const tasks = [];
-    let count = 0;
-    for (const emp of emps) {
-      const val = Math.round(parseFloat(document.getElementById('m-amt-' + emp.emp_id)?.value) || 0);
-      const existing = this.dateAdvances.find(a => String(a.emp_id) === String(emp.emp_id));
-      if (val > 0 && existing) {
-        tasks.push(() => API.call('saveAdvance', { advance_id: existing.advance_id, date, amount: val }));
-        count++;
-      } else if (val > 0) {
-        tasks.push(() => API.call('saveAdvance', { emp_id: emp.emp_id, emp_name: emp.name, date, amount: val, created_by: 'Manager' }));
-        count++;
-      } else if (val === 0 && existing) {
-        tasks.push(() => API.call('deleteAdvance', { advance_id: existing.advance_id }));
-      }
-    }
-    if (!count) { toast('Enter at least one amount', 'error'); return; }
     try {
-      for (const task of tasks) { await task(); }
-      await this.loadForDate(date, false);  // false = show fresh server values, discard typed inputs
-      toast(`${count} advance${count > 1 ? 's' : ''} submitted`, 'success');
-    } catch(e) { toast(e.message, 'error'); }
+      // Fresh fetch before processing so existing advances are always current
+      try {
+        const r = await API.call('getAdvances', { start_date: date, end_date: date });
+        this.dateAdvances = r.data || [];
+      } catch(e) { toast(e.message, 'error'); return; }
+
+      const emps = State.employees.filter(e => e.status === 'Active');
+      // Build task functions (not Promises) so saves execute one-at-a-time,
+      // preventing race conditions in concurrent appendRow / setValues on the sheet.
+      const tasks = [];
+      let count = 0;
+      for (const emp of emps) {
+        const val = Math.round(parseFloat(document.getElementById('m-amt-' + emp.emp_id)?.value) || 0);
+        // Only match manager-created advances — never overwrite admin carry-forwards
+        const existing = this.dateAdvances.find(a =>
+          String(a.emp_id) === String(emp.emp_id) &&
+          String(a.created_by || 'Manager') !== 'Previous Month Bal'
+        );
+        if (val > 0 && existing) {
+          tasks.push(() => API.call('saveAdvance', { advance_id: existing.advance_id, date, amount: val }));
+          count++;
+        } else if (val > 0) {
+          tasks.push(() => API.call('saveAdvance', { emp_id: emp.emp_id, emp_name: emp.name, date, amount: val, created_by: 'Manager' }));
+          count++;
+        } else if (val === 0 && existing) {
+          tasks.push(() => API.call('deleteAdvance', { advance_id: existing.advance_id }));
+        }
+      }
+      if (!count) { toast('Enter at least one amount', 'error'); return; }
+      try {
+        for (const task of tasks) { await task(); }
+        await this.loadForDate(date, false);
+        toast(`${count} advance${count > 1 ? 's' : ''} submitted`, 'success');
+      } catch(e) { toast(e.message, 'error'); }
+    } finally {
+      this._submitting = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
+    }
   },
 
   _buildPDFElement() {

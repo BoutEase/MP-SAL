@@ -447,6 +447,16 @@ function saveAdvance(data) {
     var amount = Math.round(Number(data.amount) || 0);
 
     if (!data.advance_id) {
+      // Dedup: carry-forward records are unique per employee per month — never insert twice
+      if (String(data.created_by) === 'Previous Month Bal') {
+        var monthPrefix = dateStr.substring(0, 7);
+        var existing = rows.slice(1).find(function(r) {
+          return r[0] && String(r[1]).trim() === String(data.emp_id).trim() &&
+                 fmtDate(r[3]).substring(0, 7) === monthPrefix &&
+                 String(r[6]) === 'Previous Month Bal';
+        });
+        if (existing) return { success: true, advance_id: existing[0], duplicate: true };
+      }
       const nums = rows.slice(1).filter(function(r) { return r[0]; })
         .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
       const next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(5, '0');
