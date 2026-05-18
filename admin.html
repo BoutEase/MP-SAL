@@ -323,69 +323,35 @@
       .neg-banner-table td { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border: none; }
       .neg-banner-table td::before { content: attr(data-label); font-weight: 600; color: var(--danger); font-size: 11px; margin-right: 8px; }
 
-      /* Payment run table — professional card layout */
+      /* Payment run table — mobile replaced by JS-rendered cards */
       .pay-run-table { width: 100%; border-collapse: collapse; }
       .pay-run-table thead { display: none; }
-      .pay-run-table tr {
-        display: block; margin: 0 0 12px;
-        border-radius: 14px; border: 1px solid var(--border);
-        background: var(--surface); overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0,0,0,.07);
-      }
+      .pay-run-table tr { display: block; margin: 0 0 12px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
       .pay-run-table tr[style*="opacity:.55"] { opacity: .6; }
       .pay-run-table tr[style*="danger-light"] { border-color: rgba(220,53,69,.35) !important; }
-      /* Card header: first td — name via ::before, checkbox + badge below */
-      .pay-run-table td:first-child {
-        display: block !important;
-        padding: 0 !important;
-        background: var(--surface2);
-        border-bottom: 1px solid var(--border);
-      }
-      .pay-run-table tr[style*="danger-light"] td:first-child {
-        background: var(--danger-light) !important;
-        border-bottom-color: rgba(220,53,69,.25) !important;
-      }
-      /* Employee name injected from data-label attribute */
-      .pay-run-table td:first-child::before {
-        content: attr(data-label);
-        display: block;
-        padding: 12px 14px 4px;
-        font-size: 15px; font-weight: 700; color: var(--text);
-      }
-      /* Clearfix for floated badge */
-      .pay-run-table td:first-child::after { content: ''; display: table; clear: both; }
-      /* Checkbox sizing */
-      .pay-run-table td:first-child input[type="checkbox"] {
-        width: 16px; height: 16px; margin: 6px 8px 12px 14px; vertical-align: middle; cursor: pointer;
-      }
-      /* Status badge floated right inside header */
-      .pay-status-badge {
-        display: inline-flex; align-items: center; float: right;
-        font-size: 10px; font-weight: 700; padding: 3px 9px;
-        border-radius: 20px; letter-spacing: .03em;
-        text-transform: uppercase; white-space: nowrap;
-        margin: 6px 14px 12px 0;
-      }
-      /* Hide name span on mobile — name shown via ::before */
-      .pay-emp-name { display: none; }
-      /* Card body rows */
-      .pay-run-table td {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 9px 14px; border: none;
-        border-bottom: 1px solid rgba(0,0,0,.04); font-size: 13px;
-      }
+      .pay-run-table td { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; border-bottom: 1px solid rgba(0,0,0,.04); font-size: 13px; }
       .pay-run-table td:last-child { border-bottom: none; padding-bottom: 13px; }
-      .pay-run-table td::before {
-        content: attr(data-label); font-size: 11px; color: var(--muted);
-        font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-      }
-      /* Amount input */
-      .pay-run-table td input[type="number"] {
-        width: 110px !important; padding: 7px 10px; font-size: 14px;
-        border-radius: 8px; text-align: right;
-      }
-      /* Mode select */
-      .pay-run-table td select { padding: 7px 10px; font-size: 13px; border-radius: 8px; width: auto; }
+      .pay-run-table td::before { content: attr(data-label); font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+      .pay-run-table td:first-child { flex-direction: column; align-items: flex-start; padding: 0; }
+      /* JS-rendered mobile cards */
+      .pay-mob-list { padding: 10px; display: flex; flex-direction: column; gap: 12px; }
+      .pay-mob-card { border-radius: 14px; border: 1px solid var(--border); background: var(--surface); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+      .pay-mob-card.neg { border-color: rgba(220,53,69,.35); }
+      .pay-mob-card.done { opacity: .6; pointer-events: none; }
+      .pay-mob-hdr { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+      .pay-mob-card.neg .pay-mob-hdr { background: var(--danger-light); border-bottom-color: rgba(220,53,69,.25); }
+      .pay-mob-name { font-weight: 700; font-size: 15px; flex: 1; color: var(--text); }
+      .pay-mob-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; border-bottom: 1px solid rgba(0,0,0,.04); font-size: 13px; }
+      .pay-mob-row:last-child { border-bottom: none; padding-bottom: 13px; }
+      .pay-mob-row > span:first-child { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+      .pay-mob-input { width: 120px; padding: 7px 10px; font-size: 14px !important; border-radius: 8px; text-align: right; border: 1.5px solid var(--border-2); background: var(--surface); color: var(--text); }
+      .pay-mob-select { padding: 7px 10px; font-size: 14px !important; border-radius: 8px; border: 1.5px solid var(--border-2); background: var(--surface); color: var(--text); }
+      .pay-badge { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+      .pay-badge.paid { background: #d1fae5; color: #065f46; }
+      .pay-badge.neg  { background: #fee2e2; color: #991b1b; }
+      .pay-badge.pend { background: #fef3c7; color: #92400e; }
+      /* Status badge + emp name span — desktop only */
+      .pay-status-badge, .pay-emp-name { display: none; }
     }
   </style>
 </head>
@@ -3199,6 +3165,7 @@ Views.Payments = {
   render(run, payments) {
     const wrap = document.getElementById('pay-run-wrap');
     const today = new Date().toISOString().split('T')[0];
+    const isMob = window.innerWidth <= 768;
 
     // Split run into Direct and Via Distributor based on employee profile
     const empMap2 = {};
@@ -3346,8 +3313,31 @@ Views.Payments = {
           </label>
           <button class="btn btn-primary btn-sm" onclick="Views.Payments.recordSelected()">✓ Record Selected</button>
         </div>
-        <div style="overflow-x:auto;padding:8px">
-          <table class="pay-run-table" style="width:100%;border-collapse:collapse;font-size:13px">
+        ${isMob
+          ? `<div class="pay-mob-list">${directRun.map((r, i) => {
+              const isNeg  = r.net_pay < 0;
+              const rem    = r.remaining;
+              const isPaid = !isNeg && rem <= 0;
+              const badge  = isPaid  ? `<span class="pay-badge paid">✓ Paid</span>`
+                           : isNeg   ? `<span class="pay-badge neg">Negative</span>`
+                           :           `<span class="pay-badge pend">Pending</span>`;
+              return `<div class="pay-mob-card ${isNeg?'neg':isPaid?'done':''}" id="payrun-row-${r.emp_id}">
+                <div class="pay-mob-hdr">
+                  <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
+                  <strong class="pay-mob-name">${r.emp_name}</strong>
+                  ${badge}
+                </div>
+                <div class="pay-mob-row"><span>Net Pay</span><span style="font-weight:700;${isNeg?'color:var(--danger)':''}">${fmt(r.net_pay)}</span></div>
+                <div class="pay-mob-row"><span>Paid</span><span style="color:${r.already_paid>0?'var(--success)':'var(--muted)'}">${r.already_paid>0?fmt(r.already_paid):'—'}</span></div>
+                <div class="pay-mob-row"><span>Remaining</span><span style="font-weight:700;color:${isNeg?'var(--danger)':rem>0?'var(--danger)':'var(--success)'}">${isNeg?'⚠ Negative':rem>0?fmt(rem):'✓ Paid'}</span></div>
+                ${!isPaid&&!isNeg?`
+                <div class="pay-mob-row"><span>Amount</span><input type="number" id="pay-amt-${r.emp_id}" value="${rem>0?rem:''}" min="0" class="pay-mob-input" /></div>
+                <div class="pay-mob-row"><span>Mode</span><select id="pay-mode-${r.emp_id}" class="pay-mob-select"><option>UPI</option><option>Cash</option><option>PhonePe</option></select></div>
+                `:''}
+              </div>`;
+            }).join('')}</div>`
+          : `<div style="overflow-x:auto;padding:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead style="background:var(--surface)">
               <tr>
                 <th style="padding:10px 8px;text-align:left">Employee</th>
@@ -3365,26 +3355,20 @@ Views.Payments = {
                 const isPaid = !isNeg && rem <= 0;
                 const rowStyle = isPaid ? 'opacity:.55' : isNeg ? 'background:var(--danger-light)' : '';
                 return `<tr style="border-bottom:1px solid var(--border);${rowStyle}" id="payrun-row-${r.emp_id}">
-                  <td data-label="${r.emp_name}" style="padding:8px 10px">
+                  <td style="padding:8px 10px">
                     <input type="checkbox" class="pay-chk" data-empid="${r.emp_id}" ${(isPaid||isNeg)?'disabled':''} />
-                    <span class="pay-emp-name">${r.emp_name}</span>
-                    ${isPaid
-                      ? `<span class="pay-status-badge" style="background:#d1fae5;color:#065f46">✓ Paid</span>`
-                      : isNeg
-                        ? `<span class="pay-status-badge" style="background:#fee2e2;color:#991b1b">Negative</span>`
-                        : `<span class="pay-status-badge" style="background:#fef3c7;color:#92400e">Pending</span>`
-                    }
+                    <span style="font-weight:600;font-size:13px;margin-left:4px">${r.emp_name}</span>
                   </td>
-                  <td data-label="Net Pay" style="padding:10px 8px;text-align:right;${isNeg?'color:var(--danger);font-weight:700':''}">${fmt(r.net_pay)}</td>
-                  <td data-label="Paid" style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid>0?fmt(r.already_paid):'—'}</td>
-                  <td data-label="Remaining" style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg?'var(--danger)':rem>0?'var(--danger)':'var(--success)'}">
-                    ${isNeg ? '⚠ Negative' : rem > 0 ? fmt(rem) : '✓ Paid'}
+                  <td style="padding:10px 8px;text-align:right;${isNeg?'color:var(--danger);font-weight:700':''}">${fmt(r.net_pay)}</td>
+                  <td style="padding:10px 8px;text-align:right;color:var(--success)">${r.already_paid>0?fmt(r.already_paid):'—'}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${isNeg?'var(--danger)':rem>0?'var(--danger)':'var(--success)'}">
+                    ${isNeg?'⚠ Negative':rem>0?fmt(rem):'✓ Paid'}
                   </td>
-                  <td data-label="Amount" style="padding:10px 8px;text-align:right">
+                  <td style="padding:10px 8px;text-align:right">
                     <input type="number" id="pay-amt-${r.emp_id}" value="${rem>0&&!isNeg?rem:''}" min="0"
                       style="width:90px;padding:4px 6px;font-size:13px;text-align:right" ${(isPaid||isNeg)?'disabled':''} />
                   </td>
-                  <td data-label="Mode" style="padding:10px 8px;text-align:center">
+                  <td style="padding:10px 8px;text-align:center">
                     <select id="pay-mode-${r.emp_id}" style="padding:4px 6px;font-size:12px;width:auto" ${(isPaid||isNeg)?'disabled':''}>
                       <option>UPI</option><option>Cash</option><option>PhonePe</option>
                     </select>
@@ -3393,7 +3377,7 @@ Views.Payments = {
               }).join('')}
             </tbody>
           </table>
-        </div>
+        </div>`}
       </div>` : ''}
 
       ${distRun.length ? `
