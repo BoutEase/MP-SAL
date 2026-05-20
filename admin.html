@@ -2268,14 +2268,14 @@ Views.Employees = {
             <option value="">No</option>
             <option value="Yes" ${req.company_room==='Yes'?'selected':''}>Yes (−₹200/week)</option>
           </select></div>
-        <div class="field"><label>Login Code</label><input id="ef-logincode" placeholder="e.g. emp001" /></div>
+        <div class="field"><label>Login Code</label><input id="ef-logincode" value="${(()=>{const p=req.name.replace(/\s+/g,'').substring(0,3).toLowerCase();const n=String(Math.floor(100+Math.random()*900));return p+n;})()" /></div>
         <div class="field"><label>Bonus Scheme</label>
           <select id="ef-bonus"><option value="">No</option><option value="Yes">Yes</option></select></div>
         <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${req.joining_date||''}" /></div>
         <div class="field"><label>Payment Batch</label>
           <select id="ef-batch">
             <option value="Direct">Direct</option>
-            <option value="Via Distributor">Via Distributor</option>
+            <option value="Via Distributor" selected>Via Distributor</option>
           </select></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
