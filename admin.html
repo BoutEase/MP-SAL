@@ -2268,7 +2268,7 @@ Views.Employees = {
             <option value="">No</option>
             <option value="Yes" ${req.company_room==='Yes'?'selected':''}>Yes (−₹200/week)</option>
           </select></div>
-        <div class="field"><label>Login Code</label><input id="ef-logincode" value="${String(Math.floor(100000+Math.random()*900000))" /></div>
+        <div class="field"><label>Login Code</label><input id="ef-logincode" value="${(()=>{const used=new Set((State.employees||[]).map(e=>String(e.login_code||'').trim()).filter(Boolean));let c;do{c=String(Math.floor(100000+Math.random()*900000));}while(used.has(c));return c;})()" /></div>
         <div class="field"><label>Bonus Scheme</label>
           <select id="ef-bonus"><option value="">No</option><option value="Yes">Yes</option></select></div>
         <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${req.joining_date||''}" /></div>
