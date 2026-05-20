@@ -1025,11 +1025,12 @@ const EmployeeApp = {
         return;
       }
       const bonus_balance = (data && data.bonus_balance) || 0;
-      this._slip = { p, advances: advances || [], month, bonus_balance };
+      const safeAdvances = advances || [];
+      this._slip = { p, advances: safeAdvances, month, bonus_balance };
       // Use stored total_advances from payroll record (what was actually deducted);
       // fall back to summing fetched advances if present
-      const advTotal    = advances.length
-        ? advances.reduce((s, a) => s + Number(a.amount), 0)
+      const advTotal    = safeAdvances.length
+        ? safeAdvances.reduce((s, a) => s + Number(a.amount), 0)
         : (p.total_advances || 0);
       const grossTotal  = (p.gross_pay || 0) + (p.ot_earnings || 0);
       const bonusCut    = p.bonus_cut || 0;
@@ -1119,7 +1120,7 @@ const EmployeeApp = {
           </div>
         </div>
 
-        ${advances.length ? `
+        ${safeAdvances.length ? `
         <div class="card">
           <div style="font-size:14px;font-weight:700;margin-bottom:12px">Advance Details &nbsp;<span style="font-size:12px;font-weight:400;color:var(--muted)">(${periodLabel})</span></div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1130,7 +1131,7 @@ const EmployeeApp = {
               </tr>
             </thead>
             <tbody>
-              ${advances.map(a => `<tr style="border-bottom:1px solid var(--border)">
+              ${safeAdvances.map(a => `<tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:9px 10px">${fmtDate(a.date)}</td>
                 <td style="padding:9px 10px;text-align:right;font-weight:600">${fmt(a.amount)}</td>
               </tr>`).join('')}
@@ -1263,7 +1264,18 @@ const EmployeeApp = {
       });
     }
 
-    doc.save(`Payslip_${State.empName}_${month}.pdf`);
+    const filename = `Payslip_${State.empName}_${month}.pdf`;
+    try {
+      const blob = doc.output('blob');
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch(e) {
+      doc.output('dataurlnewwindow');
+    }
   },
 
   async sharePayslip() {
