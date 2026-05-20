@@ -1028,6 +1028,8 @@ Views.Payments = {
     const amt   = parseFloat(document.getElementById('pf-amt')?.value);
     if (!empId || !amt) { toast('Employee and amount required', 'error'); return; }
     const emp = State.employees.find(e => e.emp_id === empId);
+    const btn = document.querySelector('[onclick="Views.Payments.save()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
       await API.call('savePayment', {
         emp_id: empId, emp_name: emp?.name || empId,
@@ -1038,7 +1040,10 @@ Views.Payments = {
       });
       document.getElementById('pay-form-wrap').innerHTML = '';
       await this.fetch(); toast('Payment recorded', 'success');
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) {
+      toast(e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
   },
 
   async remove(paymentId) {
