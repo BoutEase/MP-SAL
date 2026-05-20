@@ -2259,7 +2259,7 @@ Views.Employees = {
             </select>
             <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="Views.Employees.addNewTeam()">+ New Team</button>
           </div></div>
-        <div class="field"><label>Designation</label><input id="ef-desig" value="${req.designation||''}" /></div>
+        <div class="field"><label>Designation</label><select id="ef-desig"><option value="">— select —</option>${['Artist','Emb Manager','Karigar','Master','Tailor'].map(d=>`<option ${req.designation===d?'selected':''}>${d}</option>`).join('')}</select></div>
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${req.petpooja_id||''}" /></div>
         <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${req.name}" /></div>
         <div class="field"><label>Weekly Salary (₹) *</label><input id="ef-salary" type="number" placeholder="Required" /></div>
@@ -2441,7 +2441,7 @@ Views.Employees = {
             <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap"
               onclick="Views.Employees.addNewTeam()">+ New Team</button>
           </div></div>
-        <div class="field"><label>Designation</label><input id="ef-desig" value="${emp.designation||''}" /></div>
+        <div class="field"><label>Designation</label><select id="ef-desig"><option value="">— select —</option>${['Artist','Emb Manager','Karigar','Master','Tailor'].map(d=>`<option ${emp.designation===d?'selected':''}>${d}</option>`).join('')}</select></div>
         <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${emp.petpooja_id||''}" /></div>
         <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${emp.petpooja_name||''}" /></div>
         <div class="field"><label>Weekly Salary (₹) *</label><input id="ef-salary" type="number" value="${emp.weekly_salary||''}" /></div>

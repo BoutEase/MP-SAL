@@ -545,7 +545,14 @@ const ManagerApp = {
 
         <!-- EMPLOYEES PANE -->
         <div id="m-pane-employees" style="display:none">
-          <h2 style="font-family:var(--font-serif);font-size:20px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em">Add Employee Request</h2>
+          <!-- Pending requests -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <h2 style="font-family:var(--font-serif);font-size:20px;font-weight:700;letter-spacing:-.02em;margin:0">My Requests</h2>
+            <button class="btn btn-secondary btn-sm" onclick="ManagerApp.refreshRequests()">Refresh</button>
+          </div>
+          <div id="m-pending-requests" style="margin-bottom:24px"></div>
+
+          <h2 style="font-family:var(--font-serif);font-size:18px;font-weight:700;margin-bottom:12px;letter-spacing:-.02em">Add Employee Request</h2>
           <div class="card">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
               <div class="field"><label>Name *</label><input id="mef-name" placeholder="Full name" /></div>
@@ -555,7 +562,7 @@ const ManagerApp = {
                   ${getTeams().map(t => `<option>${t}</option>`).join('')}
                 </select>
               </div>
-              <div class="field"><label>Designation</label><input id="mef-desig" placeholder="e.g. Chef" /></div>
+              <div class="field"><label>Designation</label><select id="mef-desig"><option value="">— select —</option><option>Artist</option><option>Emb Manager</option><option>Karigar</option><option>Master</option><option>Tailor</option></select></div>
               <div class="field"><label>Petpooja ID</label><input id="mef-pid" placeholder="e.g. 1234" /></div>
               <div class="field"><label>Company Room</label>
                 <select id="mef-room">
@@ -602,6 +609,31 @@ const ManagerApp = {
       if (bar) bar.style.display = active ? '' : 'none';
       if (svg) svg.style.opacity = active ? '1' : '.45';
     });
+    if (tab === 'employees') this.refreshRequests();
+  },
+
+  async refreshRequests() {
+    const el = document.getElementById('m-pending-requests');
+    if (!el) return;
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px">Loading…</p>';
+    try {
+      const r = await API.call('getEmployeeRequests');
+      const list = r.data || [];
+      if (!list.length) {
+        el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px 0">No pending requests</p>';
+        return;
+      }
+      el.innerHTML = list.map(req => `
+        <div class="card" style="margin-bottom:10px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div>
+            <div style="font-weight:600;font-size:14px">${req.name}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">${[req.team,req.designation].filter(Boolean).join(' · ')} &nbsp;·&nbsp; submitted ${req.submitted_at ? req.submitted_at.split(' ')[0] : ''}</div>
+          </div>
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;background:#fef9c3;color:#854d0e;white-space:nowrap">Pending</span>
+        </div>`).join('');
+    } catch(e) {
+      el.innerHTML = '<p style="color:var(--error);font-size:13px">Could not load requests</p>';
+    }
   },
 
   async submitEmployeeRequest() {
@@ -625,6 +657,7 @@ const ManagerApp = {
       document.getElementById('mef-room').value = '';
       document.getElementById('mef-join').value = new Date().toISOString().split('T')[0];
       toast('Request submitted — pending admin approval', 'success');
+      this.refreshRequests();
     } catch(e) { toast(e.message, 'error'); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Submit Request'; } }
   },
