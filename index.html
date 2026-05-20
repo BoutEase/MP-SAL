@@ -1151,130 +1151,124 @@ const EmployeeApp = {
   },
 
   async downloadPayslip() {
-    if (!this._slip) { toast('No payslip loaded', 'error'); return; }
-    const { p, advances = [], month, bonus_balance } = this._slip;
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const PW = 210, M = 14, CW = PW - 2*M;
-    const Rs = n => 'Rs. ' + Number(n||0).toLocaleString('en-IN');
-    const fmtH = min => min ? `${Math.floor(min/60)}h ${min%60}m` : '--';
+    try {
+      if (!this._slip) { toast('No payslip loaded', 'error'); return; }
+      const { p, advances = [], month, bonus_balance } = this._slip;
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const PW = 210, M = 14, CW = PW - 2*M;
+      const Rs = n => 'Rs. ' + Number(n||0).toLocaleString('en-IN');
+      const fmtH = min => min ? `${Math.floor(min/60)}h ${min%60}m` : '--';
 
-    const advTotal   = advances.length ? advances.reduce((s,a) => s + Number(a.amount), 0) : (p.total_advances||0);
-    const bonusCut   = p.bonus_cut || 0;
-    const grossTotal = (p.gross_pay||0) + (p.ot_earnings||0);
-    const deductions = (p.shortfall_deduction||0) + advTotal + bonusCut;
-    const net        = grossTotal - deductions;
-    const companyCont = parseInt(State.settings?.COMPANY_CONTRIBUTION||500);
-    const bonusAdd   = p.bonus_eligible ? (bonusCut + companyCont) : 0;
-    const newBonusBal = (bonus_balance||0) + bonusAdd;
+      const advTotal   = advances.length ? advances.reduce((s,a) => s + Number(a.amount), 0) : (p.total_advances||0);
+      const bonusCut   = p.bonus_cut || 0;
+      const grossTotal = (p.gross_pay||0) + (p.ot_earnings||0);
+      const deductions = (p.shortfall_deduction||0) + advTotal + bonusCut;
+      const net        = grossTotal - deductions;
+      const companyCont = parseInt(State.settings?.COMPANY_CONTRIBUTION||500);
+      const bonusAdd   = p.bonus_eligible ? (bonusCut + companyCont) : 0;
+      const newBonusBal = (bonus_balance||0) + bonusAdd;
 
-    let y = M;
+      let y = M;
 
-    // Header
-    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
-    doc.text(State.empName, M, y+6);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,116,139);
-    doc.text(`Pay Slip  |  ${month}`, M, y+13);
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
-    doc.text('Mahitha Prasad', PW-M, y+6, {align:'right'});
-    if (p.adv_start_date && p.adv_end_date) {
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100,116,139);
-      doc.text(`Period: ${fmtDate(p.adv_start_date)} to ${fmtDate(p.adv_end_date)}`, PW-M, y+13, {align:'right'});
-    }
-    y += 20;
-    doc.setDrawColor(200,210,220); doc.setLineWidth(0.4); doc.line(M, y, PW-M, y); y += 6;
-
-    // Attendance + OT
-    doc.autoTable({
-      startY: y, margin: {left:M, right:M},
-      head: [['Attendance','','Overtime','']],
-      body: [
-        ['Total Days', String(p.TD??'--'), 'Weekday OT', fmtH(p.ot_weekday_min)],
-        ['Absent',     String(p.absent_days??'--'), 'Sunday OT',  fmtH(p.ot_sunday_min)],
-        ['Week Off',   String(p.week_off_days??'--'), 'Holiday OT', fmtH(p.ot_holiday_min)],
-      ],
-      theme: 'plain',
-      styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
-      headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
-      columnStyles: {
-        0:{textColor:[100,116,139], cellWidth:48}, 1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
-        2:{textColor:[100,116,139], cellWidth:48}, 3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+      // Header
+      doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(15,23,42);
+      doc.text(State.empName || '', M, y+6);
+      doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,116,139);
+      doc.text(`Pay Slip  |  ${month}`, M, y+13);
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(15,23,42);
+      doc.text('Mahitha Prasad', PW-M, y+6, {align:'right'});
+      if (p.adv_start_date && p.adv_end_date) {
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100,116,139);
+        doc.text(`Period: ${fmtDate(p.adv_start_date)} to ${fmtDate(p.adv_end_date)}`, PW-M, y+13, {align:'right'});
       }
-    });
-    y = doc.lastAutoTable.finalY + 4;
-    doc.setDrawColor(200,210,220); doc.line(M, y, PW-M, y); y += 6;
+      y += 20;
+      doc.setDrawColor(200,210,220); doc.setLineWidth(0.4); doc.line(M, y, PW-M, y); y += 6;
 
-    // Earnings + Deductions
-    const dedRows = [['Shortfall', Rs(p.shortfall_deduction||0)], ['Advances', Rs(advTotal)]];
-    if (bonusCut > 0) dedRows.push(['Bonus Contribution', Rs(bonusCut)]);
-    const earnRows = [['Gross Pay', Rs(p.gross_pay||0)], ['OT Earnings', Rs(p.ot_earnings||0)]];
-    const maxR = Math.max(earnRows.length, dedRows.length);
-    const edBody = [];
-    for (let i = 0; i < maxR; i++) edBody.push([earnRows[i]?.[0]??'', earnRows[i]?.[1]??'', dedRows[i]?.[0]??'', dedRows[i]?.[1]??'']);
-    edBody.push(['Total Earnings', Rs(grossTotal), 'Total Deductions', Rs(deductions)]);
-
-    doc.autoTable({
-      startY: y, margin: {left:M, right:M},
-      head: [['Earnings','','Deductions','']],
-      body: edBody,
-      theme: 'plain',
-      styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
-      headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
-      columnStyles: {
-        0:{textColor:[100,116,139], cellWidth:48}, 1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
-        2:{textColor:[100,116,139], cellWidth:48}, 3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
-      },
-      didParseCell: (d) => { if (d.row.index === edBody.length-1) { d.cell.styles.fontStyle='bold'; d.cell.styles.textColor=[15,23,42]; } }
-    });
-    y = doc.lastAutoTable.finalY + 6;
-
-    // Bonus pool
-    if (newBonusBal > 0) {
-      doc.setFillColor(240,253,244); doc.roundedRect(M, y, CW, 12, 2, 2, 'F');
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(21,128,61);
-      doc.text('Bonus Pool Balance', M+5, y+5);
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(22,101,52);
-      doc.text(`Prev Rs.${(bonus_balance||0).toLocaleString('en-IN')} + This month Rs.${bonusAdd.toLocaleString('en-IN')}`, M+5, y+10);
-      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(21,128,61);
-      doc.text(`Rs. ${newBonusBal.toLocaleString('en-IN')}`, PW-M-5, y+8, {align:'right'});
-      y += 18;
-    }
-
-    // Net Pay
-    doc.setFillColor(net < 0 ? [220,38,38] : [37,99,235]);
-    doc.roundedRect(M, y, CW, 14, 2, 2, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
-    doc.text('Net In-Hand', M+5, y+9);
-    doc.setFontSize(14); doc.text(Rs(net), PW-M-5, y+9, {align:'right'});
-    y += 20;
-
-    // Advance details
-    if (advances.length) {
-      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(15,23,42);
-      doc.text('Advance Details', M, y); y += 4;
+      // Attendance + OT
       doc.autoTable({
         startY: y, margin: {left:M, right:M},
-        head: [['Date','Amount']],
-        body: advances.map(a => [fmtDate(a.date), Rs(Number(a.amount))]),
-        foot: [['Total Deducted', Rs(advTotal)]],
-        theme: 'striped', styles: {fontSize:9},
-        headStyles: {fillColor:[241,245,249], textColor:[100,116,139]},
-        footStyles: {fillColor:[241,245,249], fontStyle:'bold', textColor:[15,23,42]},
-        columnStyles: {1:{halign:'right'}}
+        head: [['Attendance','','Overtime','']],
+        body: [
+          ['Total Days', String(p.TD??'--'), 'Weekday OT', fmtH(p.ot_weekday_min)],
+          ['Absent',     String(p.absent_days??'--'), 'Sunday OT',  fmtH(p.ot_sunday_min)],
+          ['Week Off',   String(p.week_off_days??'--'), 'Holiday OT', fmtH(p.ot_holiday_min)],
+        ],
+        theme: 'plain',
+        styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
+        headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
+        columnStyles: {
+          0:{textColor:[100,116,139], cellWidth:48}, 1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
+          2:{textColor:[100,116,139], cellWidth:48}, 3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+        }
       });
-    }
+      y = doc.lastAutoTable.finalY + 4;
+      doc.setDrawColor(200,210,220); doc.line(M, y, PW-M, y); y += 6;
 
-    const filename = `Payslip_${State.empName}_${month}.pdf`;
-    try {
-      const blob = doc.output('blob');
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      // Earnings + Deductions
+      const dedRows = [['Shortfall', Rs(p.shortfall_deduction||0)], ['Advances', Rs(advTotal)]];
+      if (bonusCut > 0) dedRows.push(['Bonus Contribution', Rs(bonusCut)]);
+      const earnRows = [['Gross Pay', Rs(p.gross_pay||0)], ['OT Earnings', Rs(p.ot_earnings||0)]];
+      const maxR = Math.max(earnRows.length, dedRows.length);
+      const edBody = [];
+      for (let i = 0; i < maxR; i++) edBody.push([earnRows[i]?.[0]??'', earnRows[i]?.[1]??'', dedRows[i]?.[0]??'', dedRows[i]?.[1]??'']);
+      edBody.push(['Total Earnings', Rs(grossTotal), 'Total Deductions', Rs(deductions)]);
+
+      doc.autoTable({
+        startY: y, margin: {left:M, right:M},
+        head: [['Earnings','','Deductions','']],
+        body: edBody,
+        theme: 'plain',
+        styles: {fontSize:9, cellPadding:{top:2,bottom:2,left:3,right:3}},
+        headStyles: {fontStyle:'bold', textColor:[100,116,139], fontSize:8, fillColor:false},
+        columnStyles: {
+          0:{textColor:[100,116,139], cellWidth:48}, 1:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:38},
+          2:{textColor:[100,116,139], cellWidth:48}, 3:{fontStyle:'bold', textColor:[15,23,42], halign:'right', cellWidth:48},
+        },
+        didParseCell: (d) => { if (d.row.index === edBody.length-1) { d.cell.styles.fontStyle='bold'; d.cell.styles.textColor=[15,23,42]; } }
+      });
+      y = doc.lastAutoTable.finalY + 6;
+
+      // Bonus pool
+      if (newBonusBal > 0) {
+        doc.setFillColor(240,253,244); doc.roundedRect(M, y, CW, 12, 2, 2, 'F');
+        doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(21,128,61);
+        doc.text('Bonus Pool Balance', M+5, y+5);
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(22,101,52);
+        doc.text(`Prev Rs.${(bonus_balance||0).toLocaleString('en-IN')} + This month Rs.${bonusAdd.toLocaleString('en-IN')}`, M+5, y+10);
+        doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(21,128,61);
+        doc.text(`Rs. ${newBonusBal.toLocaleString('en-IN')}`, PW-M-5, y+8, {align:'right'});
+        y += 18;
+      }
+
+      // Net Pay
+      if (net < 0) { doc.setFillColor(220,38,38); } else { doc.setFillColor(37,99,235); }
+      doc.roundedRect(M, y, CW, 14, 2, 2, 'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
+      doc.text('Net In-Hand', M+5, y+9);
+      doc.setFontSize(14); doc.text(Rs(net), PW-M-5, y+9, {align:'right'});
+      y += 20;
+
+      // Advance details
+      if (advances.length) {
+        doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(15,23,42);
+        doc.text('Advance Details', M, y); y += 4;
+        doc.autoTable({
+          startY: y, margin: {left:M, right:M},
+          head: [['Date','Amount']],
+          body: advances.map(a => [fmtDate(a.date), Rs(Number(a.amount))]),
+          foot: [['Total Deducted', Rs(advTotal)]],
+          theme: 'striped', styles: {fontSize:9},
+          headStyles: {fillColor:[241,245,249], textColor:[100,116,139]},
+          footStyles: {fillColor:[241,245,249], fontStyle:'bold', textColor:[15,23,42]},
+          columnStyles: {1:{halign:'right'}}
+        });
+      }
+
+      const filename = `Payslip_${State.empName}_${month}.pdf`;
+      doc.save(filename);
     } catch(e) {
-      doc.output('dataurlnewwindow');
+      toast('Could not generate PDF: ' + e.message, 'error');
     }
   },
 
