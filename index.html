@@ -1022,7 +1022,9 @@ const EmployeeApp = {
             ⚠ ₹${Math.abs(net).toLocaleString('en-IN')} has been carried forward as advance for next month's payroll.
           </div>` : ''}
 
-          <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-secondary btn-sm" onclick="window.scrollTo({top:0,behavior:'smooth'})">&#x2191; Back to Top</button>
+            <span style="flex:1"></span>
             <button class="btn btn-primary btn-sm" onclick="EmployeeApp.downloadPayslip()">&#x2193; Download Payslip</button>
             ${navigator.share ? `<button class="btn btn-secondary btn-sm" onclick="EmployeeApp.sharePayslip()">&#x1F4E4; Share</button>` : ''}
           </div>
