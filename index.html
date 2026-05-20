@@ -1025,7 +1025,7 @@ const EmployeeApp = {
         return;
       }
       const bonus_balance = (data && data.bonus_balance) || 0;
-      this._slip = { p, advances, month, bonus_balance };
+      this._slip = { p, advances: advances || [], month, bonus_balance };
       // Use stored total_advances from payroll record (what was actually deducted);
       // fall back to summing fetched advances if present
       const advTotal    = advances.length
@@ -1151,7 +1151,7 @@ const EmployeeApp = {
 
   async downloadPayslip() {
     if (!this._slip) { toast('No payslip loaded', 'error'); return; }
-    const { p, advances, month, bonus_balance } = this._slip;
+    const { p, advances = [], month, bonus_balance } = this._slip;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const PW = 210, M = 14, CW = PW - 2*M;
