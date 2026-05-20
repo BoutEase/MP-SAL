@@ -11,6 +11,24 @@ function getSheet(name) {
   return SpreadsheetApp.openById(getSpreadsheetId()).getSheetByName(name);
 }
 
+var SHEET_HEADERS = {
+  EmployeeRequests: ['request_id','name','team','designation','petpooja_id','company_room','joining_date','submitted_by','submitted_at','status']
+};
+
+function getOrCreateSheet(name) {
+  var ss = SpreadsheetApp.openById(getSpreadsheetId());
+  var sheet = ss.getSheetByName(name);
+  if (!sheet && SHEET_HEADERS[name]) {
+    sheet = ss.insertSheet(name);
+    var headers = SHEET_HEADERS[name];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold').setBackground('#1e3a5f').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
 function jsonOut(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
@@ -381,7 +399,7 @@ function deleteEmployee(empId) {
 // ---- Employee Requests ----
 
 function submitEmployeeRequest(data) {
-  var sheet = getSheet('EmployeeRequests');
+  var sheet = getOrCreateSheet('EmployeeRequests');
   var rows = sheet.getDataRange().getValues();
   var nums = rows.slice(1).filter(function(r) { return r[0]; })
     .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
@@ -398,7 +416,7 @@ function submitEmployeeRequest(data) {
 }
 
 function getEmployeeRequests() {
-  var sheet = getSheet('EmployeeRequests');
+  var sheet = getOrCreateSheet('EmployeeRequests');
   var rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0] && r[9] === 'Pending'; });
   return {
     success: true,
@@ -423,7 +441,7 @@ function approveEmployeeRequest(data) {
     payment_batch: data.payment_batch || 'Direct',
     status: 'Active'
   });
-  var sheet = getSheet('EmployeeRequests');
+  var sheet = getOrCreateSheet('EmployeeRequests');
   var rows = sheet.getDataRange().getValues();
   var idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.request_id; });
   if (idx > 0) sheet.deleteRow(idx + 1);
@@ -431,7 +449,7 @@ function approveEmployeeRequest(data) {
 }
 
 function rejectEmployeeRequest(requestId) {
-  var sheet = getSheet('EmployeeRequests');
+  var sheet = getOrCreateSheet('EmployeeRequests');
   var rows = sheet.getDataRange().getValues();
   var idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === requestId; });
   if (idx > 0) sheet.deleteRow(idx + 1);
