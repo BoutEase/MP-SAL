@@ -2774,11 +2774,16 @@ Views.Payments = {
       });
     }
 
+    const btn = document.querySelector('[onclick="Views.Payments.recordSelected()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
       await API.call('saveBulkPayments', { records });
       toast(`${records.length} payment(s) recorded`, 'success');
       this.onMonthChange(this._month);
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) {
+      toast(e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Record Selected'; }
+    }
   },
 
   async remove(paymentId) {
