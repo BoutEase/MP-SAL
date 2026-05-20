@@ -499,47 +499,134 @@ function el(tag, attrs, ...children) {
 // ============================================================
 const ManagerApp = {
   dateAdvances: [],
+  _activeTab: 'advances',
 
   init() {
     show('screen-manager');
     const c = document.getElementById('screen-manager');
     const today = new Date().toISOString().split('T')[0];
     c.innerHTML = `
-    <div style="min-height:100vh;background:var(--bg)">
-    <div class="mp-topbar">
-      <span class="mp-brand-mark" style="width:28px;height:28px;font-size:15px">M</span>
-      <span class="mp-topbar-title">MP&#x2009;SAL</span>
-      <span style="font-size:12px;color:var(--muted);font-weight:600;background:var(--accent-light);color:var(--accent);padding:3px 10px;border-radius:99px;margin-left:4px">Manager</span>
-      <span style="flex:1"></span>
-      <button class="btn btn-secondary btn-sm" onclick="App.toggleTheme()">Theme</button>
-      <button class="btn btn-danger btn-sm" onclick="Auth.logout()" style="margin-left:6px">Logout</button>
-    </div>
-    <main style="padding:24px 28px;max-width:760px;margin:0 auto">
-      <h2 style="font-family:var(--font-serif);font-size:20px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em">Advance Entry</h2>
-      <div class="card" style="margin-bottom:20px">
-        <div class="field" style="margin-bottom:16px">
-          <label style="font-weight:600">Date</label>
-          <input type="date" id="m-date" value="${today}" style="max-width:180px"
-            onchange="ManagerApp.loadForDate(this.value)" />
-        </div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:14px" id="m-emp-table">
-            <thead style="background:var(--surface2)">
-              <tr>
-                <th style="padding:10px 12px;text-align:left;font-weight:600">ID</th>
-                <th style="padding:10px 12px;text-align:left;font-weight:600">Employee</th>
-                <th style="padding:10px 12px;text-align:right;font-weight:600">Amount (₹)</th>
-              </tr>
-            </thead>
-            <tbody id="m-emp-body"></tbody>
-          </table>
-        </div>
-        <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="ManagerApp.submit()">Submit</button>
+    <div style="min-height:100vh;background:var(--bg);padding-bottom:72px">
+      <div class="mp-topbar">
+        <span class="mp-brand-mark" style="width:28px;height:28px;font-size:15px">M</span>
+        <span class="mp-topbar-title">MP&#x2009;SAL</span>
+        <span style="font-size:12px;font-weight:600;background:var(--accent-light);color:var(--accent);padding:3px 10px;border-radius:99px;margin-left:4px">Manager</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary btn-sm" onclick="App.toggleTheme()">Theme</button>
+        <button class="btn btn-danger btn-sm" onclick="Auth.logout()" style="margin-left:6px">Logout</button>
       </div>
-      <div id="m-submitted"></div>
-    </main>
+
+      <main style="padding:24px 16px;max-width:760px;margin:0 auto">
+        <!-- ADVANCES PANE -->
+        <div id="m-pane-advances">
+          <h2 style="font-family:var(--font-serif);font-size:20px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em">Advance Entry</h2>
+          <div class="card" style="margin-bottom:20px">
+            <div class="field" style="margin-bottom:16px">
+              <label style="font-weight:600">Date</label>
+              <input type="date" id="m-date" value="${today}" style="max-width:180px"
+                onchange="ManagerApp.loadForDate(this.value)" />
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:14px" id="m-emp-table">
+                <thead style="background:var(--surface2)">
+                  <tr>
+                    <th style="padding:10px 12px;text-align:left;font-weight:600">ID</th>
+                    <th style="padding:10px 12px;text-align:left;font-weight:600">Employee</th>
+                    <th style="padding:10px 12px;text-align:right;font-weight:600">Amount (₹)</th>
+                  </tr>
+                </thead>
+                <tbody id="m-emp-body"></tbody>
+              </table>
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="ManagerApp.submit()">Submit</button>
+          </div>
+          <div id="m-submitted"></div>
+        </div>
+
+        <!-- EMPLOYEES PANE -->
+        <div id="m-pane-employees" style="display:none">
+          <h2 style="font-family:var(--font-serif);font-size:20px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em">Add Employee Request</h2>
+          <div class="card">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+              <div class="field"><label>Name *</label><input id="mef-name" placeholder="Full name" /></div>
+              <div class="field"><label>Team</label>
+                <select id="mef-team">
+                  <option value="">— select —</option>
+                  ${getTeams().map(t => `<option>${t}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field"><label>Designation</label><input id="mef-desig" placeholder="e.g. Chef" /></div>
+              <div class="field"><label>Petpooja ID</label><input id="mef-pid" placeholder="e.g. 1234" /></div>
+              <div class="field"><label>Company Room</label>
+                <select id="mef-room">
+                  <option value="">No</option>
+                  <option value="Yes">Yes (−₹200/week)</option>
+                </select>
+              </div>
+              <div class="field"><label>Joining Date</label><input type="date" id="mef-join" value="${today}" /></div>
+            </div>
+            <button class="btn btn-primary" style="width:100%" onclick="ManagerApp.submitEmployeeRequest()">Submit Request</button>
+          </div>
+        </div>
+      </main>
+
+      <!-- BOTTOM NAV -->
+      <nav style="position:fixed;bottom:0;left:0;right:0;z-index:50;background:var(--surface);border-top:1px solid var(--border);display:flex;padding-bottom:env(safe-area-inset-bottom,6px);min-height:64px;box-shadow:0 -2px 16px rgba(0,0,0,.08)">
+        <button id="mnav-advances" onclick="ManagerApp.switchTab('advances')"
+          style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 6px;border:none;background:none;cursor:pointer;font-size:10px;font-weight:600;color:var(--primary-dark);font-family:var(--font-sans);letter-spacing:.01em;position:relative;-webkit-tap-highlight-color:transparent">
+          <span style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;background:var(--primary);border-radius:0 0 4px 4px" id="mnav-bar-advances"></span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="opacity:1"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/></svg>
+          <span>Advances</span>
+        </button>
+        <button id="mnav-employees" onclick="ManagerApp.switchTab('employees')"
+          style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 6px;border:none;background:none;cursor:pointer;font-size:10px;font-weight:600;color:#9ca3af;font-family:var(--font-sans);letter-spacing:.01em;position:relative;-webkit-tap-highlight-color:transparent">
+          <span style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;background:var(--primary);border-radius:0 0 4px 4px;display:none" id="mnav-bar-employees"></span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="opacity:.45"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          <span>Employees</span>
+        </button>
+      </nav>
     </div>`;
     this.loadForDate(today);
+  },
+
+  switchTab(tab) {
+    this._activeTab = tab;
+    document.getElementById('m-pane-advances').style.display  = tab === 'advances'  ? '' : 'none';
+    document.getElementById('m-pane-employees').style.display = tab === 'employees' ? '' : 'none';
+    ['advances','employees'].forEach(t => {
+      const btn = document.getElementById('mnav-' + t);
+      const bar = document.getElementById('mnav-bar-' + t);
+      const svg = btn?.querySelector('svg');
+      const active = t === tab;
+      if (btn) btn.style.color = active ? 'var(--primary-dark)' : '#9ca3af';
+      if (bar) bar.style.display = active ? '' : 'none';
+      if (svg) svg.style.opacity = active ? '1' : '.45';
+    });
+  },
+
+  async submitEmployeeRequest() {
+    const name = document.getElementById('mef-name')?.value.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    const btn = document.querySelector('[onclick="ManagerApp.submitEmployeeRequest()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    try {
+      await API.call('submitEmployeeRequest', {
+        name,
+        team:        document.getElementById('mef-team')?.value,
+        designation: document.getElementById('mef-desig')?.value.trim(),
+        petpooja_id: document.getElementById('mef-pid')?.value.trim(),
+        company_room:document.getElementById('mef-room')?.value,
+        joining_date:document.getElementById('mef-join')?.value,
+        submitted_by: 'Manager'
+      });
+      // Reset form
+      ['mef-name','mef-desig','mef-pid'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      document.getElementById('mef-team').value = '';
+      document.getElementById('mef-room').value = '';
+      document.getElementById('mef-join').value = new Date().toISOString().split('T')[0];
+      toast('Request submitted — pending admin approval', 'success');
+    } catch(e) { toast(e.message, 'error'); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Submit Request'; } }
   },
 
   async loadForDate(date, preserveUserInput = true) {

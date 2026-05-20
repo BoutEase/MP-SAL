@@ -2151,15 +2151,13 @@ Views.Payroll = {
 // VIEWS — EMPLOYEES
 // ============================================================
 Views.Employees = {
+  _pendingRequests: [],
+
   async load() {
     const c = document.getElementById('view-employees');
-    c.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <h2 style="font-size:18px;font-weight:700">Employees</h2>
-      <input type="search" id="emp-search" placeholder="Search…" style="max-width:200px" oninput="Views.Employees.filter()" />
-      <select id="emp-team" style="width:auto" onchange="Views.Employees.filter()">
-        <option value="">All Teams</option>
-        ${getTeams().map(t => `<option>${t}</option>`).join('')}
-      </select>
       <span style="flex:1"></span>
       <label class="btn btn-secondary btn-sm" style="cursor:pointer" title="Upload Excel to bulk add/update employees">
         ↑ Upload Excel
@@ -2168,10 +2166,172 @@ Views.Employees = {
       <button class="btn btn-secondary btn-sm" onclick="Views.Employees.generateCodes()" title="Assign new random 6-digit login codes to all employees">⟳ Generate Login Codes</button>
       <button class="btn btn-primary btn-sm" onclick="Views.Employees.openForm()">+ Add Employee</button>
     </div>
+
+    <div class="role-tabs" style="max-width:340px;margin-bottom:16px">
+      <button id="etab-active" class="role-tab active" onclick="Views.Employees.switchTab('active')">Active Employees</button>
+      <button id="etab-pending" class="role-tab" onclick="Views.Employees.switchTab('pending')">
+        Pending <span id="etab-pending-count" style="display:none;background:var(--danger);color:#fff;border-radius:99px;padding:1px 6px;font-size:10px;margin-left:4px"></span>
+      </button>
+    </div>
+
     <div id="emp-form-wrap"></div>
     <div id="emp-upload-preview" style="display:none"></div>
-    <div id="emp-list"></div>`;
-    this.render();
+    <div id="emp-tab-active">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <input type="search" id="emp-search" placeholder="Search…" style="max-width:200px" oninput="Views.Employees.filter()" />
+        <select id="emp-team" style="width:auto" onchange="Views.Employees.filter()">
+          <option value="">All Teams</option>
+          ${getTeams().map(t => `<option>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div id="emp-list"></div>
+    </div>
+    <div id="emp-tab-pending" style="display:none"></div>`;
+
+    const [, reqRes] = await Promise.all([
+      this.render(),
+      API.call('getEmployeeRequests', {}).catch(() => ({ data: [] }))
+    ]);
+    this._pendingRequests = reqRes.data || [];
+    this._updatePendingBadge();
+  },
+
+  switchTab(tab) {
+    document.getElementById('emp-tab-active').style.display  = tab === 'active'  ? '' : 'none';
+    document.getElementById('emp-tab-pending').style.display = tab === 'pending' ? '' : 'none';
+    document.getElementById('etab-active').classList.toggle('active',  tab === 'active');
+    document.getElementById('etab-pending').classList.toggle('active', tab === 'pending');
+    if (tab === 'pending') this.renderPending();
+  },
+
+  _updatePendingBadge() {
+    const badge = document.getElementById('etab-pending-count');
+    if (!badge) return;
+    const n = this._pendingRequests.length;
+    badge.textContent = n;
+    badge.style.display = n ? '' : 'none';
+  },
+
+  renderPending() {
+    const c = document.getElementById('emp-tab-pending');
+    if (!c) return;
+    if (!this._pendingRequests.length) {
+      c.innerHTML = '<p style="color:var(--muted)">No pending employee requests.</p>';
+      return;
+    }
+    c.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px">
+      ${this._pendingRequests.map(r => `
+        <div class="card" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:700;font-size:14px">${r.name}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:8px">
+              ${r.team ? `<span>Team: <strong>${r.team}</strong></span>` : ''}
+              ${r.designation ? `<span>Role: <strong>${r.designation}</strong></span>` : ''}
+              ${r.petpooja_id ? `<span>PetPooja ID: <strong>${r.petpooja_id}</strong></span>` : ''}
+              ${r.company_room === 'Yes' ? `<span class="badge badge-warning">Room</span>` : ''}
+              ${r.joining_date ? `<span>Joining: <strong>${r.joining_date}</strong></span>` : ''}
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">Submitted by ${r.submitted_by} · ${r.submitted_at}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-primary btn-sm" onclick="Views.Employees.openApprovalForm('${r.request_id}')">Review &amp; Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="Views.Employees.rejectRequest('${r.request_id}','${r.name}')">Reject</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+  },
+
+  openApprovalForm(requestId) {
+    const req = this._pendingRequests.find(r => r.request_id === requestId);
+    if (!req) return;
+    const c = document.getElementById('emp-form-wrap');
+    c.innerHTML = `<div class="card" style="margin-bottom:16px;border:2px solid var(--primary)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <h3 style="font-size:15px;margin:0">Review &amp; Approve Employee Request</h3>
+        <span style="font-size:11px;color:var(--muted);background:var(--surface2);padding:2px 8px;border-radius:99px">from Manager</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+        <div class="field"><label>Name *</label><input id="ef-name" value="${req.name}" /></div>
+        <div class="field"><label>Team</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="ef-team"><option value="">—</option>
+              ${getTeams().map(t => `<option ${req.team===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap" onclick="Views.Employees.addNewTeam()">+ New Team</button>
+          </div></div>
+        <div class="field"><label>Designation</label><input id="ef-desig" value="${req.designation||''}" /></div>
+        <div class="field"><label>Petpooja ID</label><input id="ef-pid" value="${req.petpooja_id||''}" /></div>
+        <div class="field"><label>Petpooja Name (if different)</label><input id="ef-pname" value="${req.name}" /></div>
+        <div class="field"><label>Weekly Salary (₹) *</label><input id="ef-salary" type="number" placeholder="Required" /></div>
+        <div class="field"><label>Company Room</label>
+          <select id="ef-room">
+            <option value="">No</option>
+            <option value="Yes" ${req.company_room==='Yes'?'selected':''}>Yes (−₹200/week)</option>
+          </select></div>
+        <div class="field"><label>Login Code</label><input id="ef-logincode" placeholder="e.g. emp001" /></div>
+        <div class="field"><label>Bonus Scheme</label>
+          <select id="ef-bonus"><option value="">No</option><option value="Yes">Yes</option></select></div>
+        <div class="field"><label>Joining Date</label><input id="ef-join" type="date" value="${req.joining_date||''}" /></div>
+        <div class="field"><label>Payment Batch</label>
+          <select id="ef-batch">
+            <option value="Direct">Direct</option>
+            <option value="Via Distributor">Via Distributor</option>
+          </select></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary btn-sm" onclick="Views.Employees.approveRequest('${requestId}')">✓ Approve &amp; Create Employee</button>
+        <button class="btn btn-secondary btn-sm" onclick="Views.Employees.closeForm()">Cancel</button>
+      </div>
+    </div>`;
+    c.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
+
+  async approveRequest(requestId) {
+    const req = this._pendingRequests.find(r => r.request_id === requestId);
+    if (!req) return;
+    const name   = document.getElementById('ef-name')?.value.trim();
+    const salary = parseFloat(document.getElementById('ef-salary')?.value);
+    if (!name || !salary) { toast('Name and salary are required', 'error'); return; }
+    const btn = document.querySelector(`[onclick="Views.Employees.approveRequest('${requestId}')"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      await API.call('approveEmployeeRequest', {
+        request_id:   requestId,
+        name,
+        team:         document.getElementById('ef-team')?.value,
+        designation:  document.getElementById('ef-desig')?.value,
+        petpooja_id:  document.getElementById('ef-pid')?.value.trim(),
+        petpooja_name:document.getElementById('ef-pname')?.value.trim() || name,
+        weekly_salary: salary,
+        company_room: document.getElementById('ef-room')?.value || '',
+        login_code:   document.getElementById('ef-logincode')?.value.trim(),
+        bonus_scheme: document.getElementById('ef-bonus')?.value || '',
+        joining_date: document.getElementById('ef-join')?.value,
+        payment_batch:document.getElementById('ef-batch')?.value || 'Direct'
+      });
+      this._pendingRequests = this._pendingRequests.filter(r => r.request_id !== requestId);
+      this._updatePendingBadge();
+      const empRes = await API.call('getEmployees', {});
+      State.employees = empRes.data || [];
+      this.closeForm();
+      this.render();
+      this.switchTab('active');
+      toast('Employee created successfully', 'success');
+    } catch(e) {
+      toast(e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Approve & Create Employee'; }
+    }
+  },
+
+  async rejectRequest(requestId, name) {
+    if (!confirm(`Reject request for "${name}"? This cannot be undone.`)) return;
+    try {
+      await API.call('rejectEmployeeRequest', { request_id: requestId });
+      this._pendingRequests = this._pendingRequests.filter(r => r.request_id !== requestId);
+      this._updatePendingBadge();
+      this.renderPending();
+      toast('Request rejected', 'success');
+    } catch(e) { toast(e.message, 'error'); }
   },
 
   filter() {

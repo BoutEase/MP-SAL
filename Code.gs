@@ -40,6 +40,10 @@ function doPost(e) {
       saveEmployee:    () => saveEmployee(data),
       saveEmployees:   () => saveEmployees(data.records),
       deleteEmployee:  () => deleteEmployee(data.emp_id),
+      submitEmployeeRequest:  () => submitEmployeeRequest(data),
+      getEmployeeRequests:    () => getEmployeeRequests(),
+      approveEmployeeRequest: () => approveEmployeeRequest(data),
+      rejectEmployeeRequest:  () => rejectEmployeeRequest(data.request_id),
       getHolidays:     () => getHolidays(data && data.year),
       saveHolidays:    () => saveHolidays(data),
       getAdvances:     () => getAdvances(data),
@@ -264,7 +268,8 @@ function initSheets() {
     Advances:  ['advance_id','emp_id','emp_name','date','amount','status','created_by','created_at'],
     Bonus:     ['bonus_id','emp_id','emp_name','month','eligible','contribution','payout','balance_after','notes'],
     Payments:  ['payment_id','emp_id','emp_name','month','date_paid','amount','mode','notes'],
-    Settings:  ['key','value']
+    Settings:  ['key','value'],
+    EmployeeRequests: ['request_id','name','team','designation','petpooja_id','company_room','joining_date','submitted_by','submitted_at','status']
   };
 
   var created = [];
@@ -370,6 +375,66 @@ function deleteEmployee(empId) {
   const rows = sheet.getDataRange().getValues();
   const idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === empId; });
   if (idx > 0) sheet.getRange(idx + 1, 9).setValue('Inactive');
+  return { success: true };
+}
+
+// ---- Employee Requests ----
+
+function submitEmployeeRequest(data) {
+  var sheet = getSheet('EmployeeRequests');
+  var rows = sheet.getDataRange().getValues();
+  var nums = rows.slice(1).filter(function(r) { return r[0]; })
+    .map(function(r) { return parseInt(String(r[0]).replace(/\D/g, '')) || 0; });
+  var next = (Math.max.apply(null, [0].concat(nums)) + 1).toString().padStart(5, '0');
+  var requestId = 'EMPREQ' + next;
+  sheet.appendRow([
+    requestId, data.name, data.team || '', data.designation || '',
+    data.petpooja_id || '', data.company_room || '', data.joining_date || '',
+    data.submitted_by || 'Manager',
+    Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss'),
+    'Pending'
+  ]);
+  return { success: true, request_id: requestId };
+}
+
+function getEmployeeRequests() {
+  var sheet = getSheet('EmployeeRequests');
+  var rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0] && r[9] === 'Pending'; });
+  return {
+    success: true,
+    data: rows.map(function(r) {
+      return {
+        request_id: r[0], name: r[1], team: r[2], designation: r[3],
+        petpooja_id: String(r[4]), company_room: r[5], joining_date: r[6],
+        submitted_by: r[7], submitted_at: r[8]
+      };
+    })
+  };
+}
+
+function approveEmployeeRequest(data) {
+  var result = saveEmployee({
+    name: data.name, team: data.team, designation: data.designation,
+    petpooja_id: data.petpooja_id, company_room: data.company_room,
+    joining_date: data.joining_date, weekly_salary: data.weekly_salary,
+    petpooja_name: data.petpooja_name || data.name,
+    login_code: data.login_code || '',
+    bonus_scheme: data.bonus_scheme || 'No',
+    payment_batch: data.payment_batch || 'Direct',
+    status: 'Active'
+  });
+  var sheet = getSheet('EmployeeRequests');
+  var rows = sheet.getDataRange().getValues();
+  var idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === data.request_id; });
+  if (idx > 0) sheet.deleteRow(idx + 1);
+  return { success: true, emp_id: result.emp_id };
+}
+
+function rejectEmployeeRequest(requestId) {
+  var sheet = getSheet('EmployeeRequests');
+  var rows = sheet.getDataRange().getValues();
+  var idx = rows.findIndex(function(r, i) { return i > 0 && r[0] === requestId; });
+  if (idx > 0) sheet.deleteRow(idx + 1);
   return { success: true };
 }
 
