@@ -2932,6 +2932,8 @@ Views.Advances = {
     const amt   = parseFloat(document.getElementById('af-amt')?.value);
     if (!empId || !amt) { toast('Employee and amount required', 'error'); return; }
     const emp = State.employees.find(e => e.emp_id === empId);
+    const btn = document.querySelector(`[onclick="Views.Advances.save('${advId||''}')"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
       await API.call('saveAdvance', {
         advance_id: advId || null,
@@ -2942,7 +2944,10 @@ Views.Advances = {
       });
       this.closeForm(); await this.fetch();
       toast('Advance saved', 'success');
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) {
+      toast(e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
   },
 
   async remove(advId, action) {
@@ -3592,6 +3597,8 @@ Views.Payments = {
     const alreadyPaid = batchPaids.reduce((s, p) => s + Number(p.amount), 0);
     const newTotal    = alreadyPaid + amt;
 
+    const btn = document.querySelector('[onclick="Views.Payments.recordBatchPayment()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
       // Save the batch payment as one record
       await API.call('saveBulkPayments', { records: [{
@@ -3611,7 +3618,10 @@ Views.Payments = {
         toast(`₹${amt.toLocaleString('en-IN')} recorded · Outstanding: ${fmt(distTotal - newTotal)}`, 'success');
       }
       this.onMonthChange(this._month);
-    } catch(e) { toast(e.message, 'error'); }
+    } catch(e) {
+      toast(e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Record'; }
+    }
   },
 
   downloadDistributorPDF() {
