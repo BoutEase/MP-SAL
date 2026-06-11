@@ -3923,11 +3923,10 @@ Views.Reconcile = {
       // Days in month for attendance check
       const [yr, mo] = month.split('-').map(Number);
       const daysInMonth = new Date(yr, mo, 0).getDate();
-      const weeksOffs   = this._countSundays(yr, mo);
 
       wrap.innerHTML = `
         ${this._renderAdvSection(payroll, allAdvances, advStart, advEnd, employees)}
-        ${this._renderAttSection(payroll, daysInMonth, weeksOffs, employees)}
+        ${this._renderAttSection(payroll, daysInMonth, employees)}
         ${this._renderSalarySection(payroll, prevPayroll, employees)}
       `;
     } catch(e) { wrap.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`; }
@@ -3937,13 +3936,6 @@ Views.Reconcile = {
     const [y, m] = month.split('-').map(Number);
     const d = new Date(y, m - 2, 1);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-  },
-
-  _countSundays(yr, mo) {
-    let count = 0;
-    const days = new Date(yr, mo, 0).getDate();
-    for (let d = 1; d <= days; d++) { if (new Date(yr, mo - 1, d).getDay() === 0) count++; }
-    return count;
   },
 
   _badge(ok, okText, failText) {
@@ -4006,7 +3998,7 @@ Views.Reconcile = {
   },
 
   // ---- 2. ATTENDANCE CROSS-CHECK ----
-  _renderAttSection(payroll, daysInMonth, sundays, employees) {
+  _renderAttSection(payroll, daysInMonth, employees) {
     const rows = payroll.map(p => {
       const empA   = employees ? employees.find(e => e.emp_id === p.emp_id) : null;
       const nameA  = empA?.name || p.emp_id;
@@ -4040,7 +4032,7 @@ Views.Reconcile = {
         <h3 style="font-size:15px;font-weight:700">Attendance Cross-check</h3>
         ${issues ? `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">${issues} issue${issues>1?'s':''}</span>` : '<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">All OK</span>'}
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">FD + HD + Absent + Week Off + Holiday should equal <strong>${daysInMonth} days</strong> (${sundays} Sundays in month)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">FD + HD + Absent + Week Off + Holiday should equal <strong>${daysInMonth} days</strong></div>
       <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead style="background:var(--surface2)">
@@ -4065,7 +4057,7 @@ Views.Reconcile = {
   _renderSalarySection(payroll, prevPayroll, employees) {
     const THRESHOLD = 0.30;
     const rows = payroll.map(p => {
-      const emp      = employees.find(e => e.emp_id === p.emp_id);
+      const emp      = employees ? employees.find(e => e.emp_id === p.emp_id) : null;
       const name     = emp?.name || p.emp_id;
       const prev     = prevPayroll.find(pp => String(pp.emp_id) === String(p.emp_id));
       const net      = Number(p.net_pay||0);
