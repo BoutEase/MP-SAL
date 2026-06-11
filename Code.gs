@@ -461,24 +461,23 @@ function rejectEmployeeRequest(requestId) {
 function getHolidays(year) {
   const sheet = getSheet('Holidays');
   const rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
+
+  function toDateStr(val) {
+    if (val instanceof Date) {
+      var y = val.getFullYear();
+      var mo = String(val.getMonth() + 1).padStart(2, '0');
+      var dy = String(val.getDate()).padStart(2, '0');
+      return y + '-' + mo + '-' + dy;
+    }
+    return String(val);
+  }
+
   const data = year
-    ? rows.filter(function(r) { return String(r[0]).startsWith(String(year)); })
+    ? rows.filter(function(r) { return toDateStr(r[0]).startsWith(String(year)); })
     : rows;
   return {
     success: true,
-    data: data.map(function(r) {
-      var d = r[0];
-      var dateStr;
-      if (d instanceof Date) {
-        var y = d.getFullYear();
-        var mo = String(d.getMonth() + 1).padStart(2, '0');
-        var dy = String(d.getDate()).padStart(2, '0');
-        dateStr = y + '-' + mo + '-' + dy;
-      } else {
-        dateStr = String(d);
-      }
-      return { date: dateStr, name: r[1] };
-    })
+    data: data.map(function(r) { return { date: toDateStr(r[0]), name: r[1] }; })
   };
 }
 
