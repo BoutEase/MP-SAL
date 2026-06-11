@@ -820,6 +820,7 @@ const AdminApp = {
       { id: 'advances',  label: 'Advances',   icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' },
       { id: 'bonus',     label: 'Bonus',      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
       { id: 'payments',  label: 'Payments',   icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>' },
+      { id: 'reconcile', label: 'Reconcile',  icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>' },
       { id: 'settings',  label: 'Settings',   icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' },
     ];
     return `
@@ -851,8 +852,9 @@ const AdminApp = {
         <div id="view-employees" class="view hidden"></div>
         <div id="view-advances"  class="view hidden"></div>
         <div id="view-bonus"     class="view hidden"></div>
-        <div id="view-payments"  class="view hidden"></div>
-        <div id="view-settings"  class="view hidden"></div>
+        <div id="view-payments"   class="view hidden"></div>
+        <div id="view-reconcile"  class="view hidden"></div>
+        <div id="view-settings"   class="view hidden"></div>
       </main>
     </div>
     <nav class="mp-mobile-nav">
@@ -872,12 +874,12 @@ const AdminApp = {
     document.querySelectorAll('.mp-mobile-nav-item').forEach(b => b.classList.remove('active'));
     document.getElementById('mob-nav-' + name)?.classList.add('active');
     const titles = { payroll: 'Payroll', employees: 'Employees', advances: 'Advances',
-                     bonus: 'Bonus Pool', payments: 'Payments', settings: 'Settings' };
+                     bonus: 'Bonus Pool', payments: 'Payments', reconcile: 'Reconcile', settings: 'Settings' };
     const titleEl = document.getElementById('mp-topbar-title');
     if (titleEl) titleEl.textContent = titles[name] || name;
 
     const loaders = { employees: Views.Employees, advances: Views.Advances,
-                      bonus: Views.Bonus, payments: Views.Payments, settings: Views.Settings };
+                      bonus: Views.Bonus, payments: Views.Payments, reconcile: Views.Reconcile, settings: Views.Settings };
     if (loaders[name]) loaders[name].load();
   }
 };
@@ -3869,6 +3871,258 @@ Views.Payments = {
     } catch(e) { toast(e.message, 'error'); }
   },
 
+};
+
+// ============================================================
+// VIEWS — RECONCILE
+// ============================================================
+Views.Reconcile = {
+  async load() {
+    const c = document.getElementById('view-reconcile');
+    c.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <h2 style="font-size:18px;font-weight:700">Reconcile</h2>
+        <select id="rec-month-sel" style="width:auto;padding:6px 10px" onchange="Views.Reconcile.onMonthChange(this.value)">
+          <option value="">— select month —</option>
+        </select>
+        <span style="flex:1"></span>
+      </div>
+      <div id="rec-wrap"><p style="color:var(--muted)">Select a month to begin.</p></div>`;
+    try {
+      const r = await API.call('getFinalizedMonths', {});
+      const months = r.data || [];
+      const sel = document.getElementById('rec-month-sel');
+      months.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); });
+      if (months.length) { sel.value = months[0]; this.onMonthChange(months[0]); }
+    } catch(e) { toast(e.message, 'error'); }
+  },
+
+  async onMonthChange(month) {
+    if (!month) return;
+    const wrap = document.getElementById('rec-wrap');
+    wrap.innerHTML = '<div class="spinner"></div>';
+    try {
+      const payrollRes = await API.call('getPayroll', { month });
+      const payroll = (payrollRes.data || []).filter(p => p.status === 'finalized');
+      if (!payroll.length) { wrap.innerHTML = '<p style="color:var(--muted)">No finalised payroll for this month.</p>'; return; }
+
+      const sample = payroll.find(p => p.adv_start_date && p.adv_end_date);
+      const advStart = sample?.adv_start_date || '';
+      const advEnd   = sample?.adv_end_date   || '';
+
+      // Fetch advances for the period and previous month payroll for salary change check
+      const [advRes, prevPayrollRes, empRes] = await Promise.all([
+        advStart && advEnd ? API.call('getAdvances', { status: 'Approved', start_date: advStart, end_date: advEnd }) : Promise.resolve({ data: [] }),
+        API.call('getPayroll', { month: this._prevMonth(month) }),
+        API.call('getEmployees', {})
+      ]);
+      const allAdvances  = advRes.data || [];
+      const prevPayroll  = prevPayrollRes.data || [];
+      const employees    = empRes.data || [];
+
+      // Days in month for attendance check
+      const [yr, mo] = month.split('-').map(Number);
+      const daysInMonth = new Date(yr, mo, 0).getDate();
+      const weeksOffs   = this._countSundays(yr, mo);
+
+      wrap.innerHTML = `
+        ${this._renderAdvSection(payroll, allAdvances, advStart, advEnd, employees)}
+        ${this._renderAttSection(payroll, daysInMonth, weeksOffs, employees)}
+        ${this._renderSalarySection(payroll, prevPayroll, employees)}
+      `;
+    } catch(e) { wrap.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`; }
+  },
+
+  _prevMonth(month) {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  },
+
+  _countSundays(yr, mo) {
+    let count = 0;
+    const days = new Date(yr, mo, 0).getDate();
+    for (let d = 1; d <= days; d++) { if (new Date(yr, mo - 1, d).getDay() === 0) count++; }
+    return count;
+  },
+
+  _badge(ok, okText, failText) {
+    return ok
+      ? `<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">✓ ${okText}</span>`
+      : `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">✗ ${failText}</span>`;
+  },
+
+  _fmt(n) { return '₹' + Number(n||0).toLocaleString('en-IN'); },
+
+  // ---- 1. ADVANCE RECONCILIATION ----
+  _renderAdvSection(payroll, allAdvances, advStart, advEnd, employees) {
+    const fmtD = d => d ? d.split('-').reverse().join('-') : '—';
+    const rows = payroll.map(p => {
+      const emp2        = employees ? employees.find(e => e.emp_id === p.emp_id) : null;
+      const empName2    = emp2?.name || p.emp_id;
+      const empAdvances = allAdvances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
+      const totalTaken  = empAdvances.reduce((s, a) => s + Number(a.amount), 0);
+      const deducted    = Number(p.total_advances || 0);
+      const match       = totalTaken === deducted;
+      const advList     = empAdvances.length
+        ? empAdvances.map(a => `<span style="font-size:11px;color:var(--muted)">${fmtD(a.date)}: ${this._fmt(a.amount)}</span>`).join('<br>')
+        : '<span style="font-size:11px;color:var(--muted)">None</span>';
+      return `<tr>
+        <td style="padding:8px 10px;font-weight:600">${empName2}<br><span style="font-size:11px;font-weight:400;color:var(--muted)">#${p.emp_id}</span></td>
+        <td style="padding:8px 10px">${advList}</td>
+        <td style="padding:8px 10px;text-align:right">${this._fmt(totalTaken)}</td>
+        <td style="padding:8px 10px;text-align:right">${this._fmt(deducted)}</td>
+        <td style="padding:8px 10px;text-align:center">${this._badge(match, 'Match', 'Mismatch')}</td>
+      </tr>`;
+    }).join('');
+
+    const mismatches = payroll.filter(p => {
+      const taken = allAdvances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim()).reduce((s,a) => s+Number(a.amount),0);
+      return taken !== Number(p.total_advances||0);
+    }).length;
+
+    return `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <h3 style="font-size:15px;font-weight:700">Advance Reconciliation</h3>
+        ${mismatches ? `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">${mismatches} mismatch${mismatches>1?'es':''}</span>` : '<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">All match</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Advance period: <strong>${fmtD(advStart)}</strong> → <strong>${fmtD(advEnd)}</strong></div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead style="background:var(--surface2)">
+          <tr>
+            <th style="padding:8px 10px;text-align:left">Employee</th>
+            <th style="padding:8px 10px;text-align:left">Advances Taken</th>
+            <th style="padding:8px 10px;text-align:right">Total Taken</th>
+            <th style="padding:8px 10px;text-align:right">Deducted in Payroll</th>
+            <th style="padding:8px 10px;text-align:center">Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>
+    </div>`;
+  },
+
+  // ---- 2. ATTENDANCE CROSS-CHECK ----
+  _renderAttSection(payroll, daysInMonth, sundays, employees) {
+    const rows = payroll.map(p => {
+      const empA   = employees ? employees.find(e => e.emp_id === p.emp_id) : null;
+      const nameA  = empA?.name || p.emp_id;
+      const fd  = Number(p.full_days||0);
+      const hd  = Number(p.half_days||0);
+      const ab  = Number(p.absent_days||0);
+      const wo  = Number(p.week_off_days||0);
+      const hol = Number(p.holiday_absent_days||0);
+      const sum = fd + hd + ab + wo + hol;
+      const ok  = sum === daysInMonth;
+      return `<tr style="${ok?'':'background:rgba(220,53,69,.04)'}">
+        <td style="padding:8px 10px;font-weight:600">${nameA}</td>
+        <td style="padding:8px 10px;text-align:center">${fd}</td>
+        <td style="padding:8px 10px;text-align:center">${hd}</td>
+        <td style="padding:8px 10px;text-align:center">${ab}</td>
+        <td style="padding:8px 10px;text-align:center">${wo}</td>
+        <td style="padding:8px 10px;text-align:center">${hol}</td>
+        <td style="padding:8px 10px;text-align:center;font-weight:600;color:${ok?'var(--success)':'var(--danger)'}">${sum}</td>
+        <td style="padding:8px 10px;text-align:center">${this._badge(ok, 'OK', sum+' ≠ '+daysInMonth)}</td>
+      </tr>`;
+    }).join('');
+
+    const issues = payroll.filter(p => {
+      const s = Number(p.full_days||0)+Number(p.half_days||0)+Number(p.absent_days||0)+Number(p.week_off_days||0)+Number(p.holiday_absent_days||0);
+      return s !== daysInMonth;
+    }).length;
+
+    return `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <h3 style="font-size:15px;font-weight:700">Attendance Cross-check</h3>
+        ${issues ? `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">${issues} issue${issues>1?'s':''}</span>` : '<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">All OK</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">FD + HD + Absent + Week Off + Holiday should equal <strong>${daysInMonth} days</strong> (${sundays} Sundays in month)</div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead style="background:var(--surface2)">
+          <tr>
+            <th style="padding:8px 10px;text-align:left">Employee</th>
+            <th style="padding:8px 10px;text-align:center">FD</th>
+            <th style="padding:8px 10px;text-align:center">HD</th>
+            <th style="padding:8px 10px;text-align:center">Absent</th>
+            <th style="padding:8px 10px;text-align:center">Week Off</th>
+            <th style="padding:8px 10px;text-align:center">Holiday</th>
+            <th style="padding:8px 10px;text-align:center">Sum</th>
+            <th style="padding:8px 10px;text-align:center">Check</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>
+    </div>`;
+  },
+
+  // ---- 3. SALARY SANITY CHECK ----
+  _renderSalarySection(payroll, prevPayroll, employees) {
+    const THRESHOLD = 0.30;
+    const rows = payroll.map(p => {
+      const emp      = employees.find(e => e.emp_id === p.emp_id);
+      const name     = emp?.name || p.emp_id;
+      const prev     = prevPayroll.find(pp => String(pp.emp_id) === String(p.emp_id));
+      const net      = Number(p.net_pay||0);
+      const prevNet  = prev ? Number(prev.net_pay||0) : null;
+      const isNeg    = net < 0;
+      let changeFlag = '', changeBadge = '';
+      if (prevNet !== null && prevNet !== 0) {
+        const pct = (net - prevNet) / Math.abs(prevNet);
+        const pctStr = (pct >= 0 ? '+' : '') + Math.round(pct * 100) + '%';
+        const big = Math.abs(pct) >= THRESHOLD;
+        changeBadge = big
+          ? `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">⚠ ${pctStr}</span>`
+          : `<span style="font-size:12px;color:var(--muted)">${pctStr}</span>`;
+      } else {
+        changeBadge = '<span style="font-size:12px;color:var(--muted)">—</span>';
+      }
+      const negBadge = isNeg ? '<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Negative</span>' : '';
+      return `<tr style="${isNeg?'background:rgba(220,53,69,.04)':''}">
+        <td style="padding:8px 10px;font-weight:600">${name}</td>
+        <td style="padding:8px 10px;text-align:right">${prevNet !== null ? this._fmt(prevNet) : '<span style="color:var(--muted)">—</span>'}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:600">${this._fmt(net)}</td>
+        <td style="padding:8px 10px;text-align:center">${changeBadge}</td>
+        <td style="padding:8px 10px;text-align:center">${negBadge}</td>
+      </tr>`;
+    }).join('');
+
+    const bigChanges = payroll.filter(p => {
+      const prev = prevPayroll.find(pp => String(pp.emp_id) === String(p.emp_id));
+      if (!prev || !Number(prev.net_pay)) return false;
+      return Math.abs((Number(p.net_pay) - Number(prev.net_pay)) / Math.abs(Number(prev.net_pay))) >= THRESHOLD;
+    }).length;
+    const negatives = payroll.filter(p => Number(p.net_pay||0) < 0).length;
+    const alerts = bigChanges + negatives;
+
+    return `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <h3 style="font-size:15px;font-weight:700">Salary Sanity Check</h3>
+        ${alerts ? `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">${alerts} alert${alerts>1?'s':''}</span>` : '<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">All OK</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Flags net pay changes ≥ 30% vs previous month, and any negative net pay.</div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead style="background:var(--surface2)">
+          <tr>
+            <th style="padding:8px 10px;text-align:left">Employee</th>
+            <th style="padding:8px 10px;text-align:right">Prev Month Net</th>
+            <th style="padding:8px 10px;text-align:right">This Month Net</th>
+            <th style="padding:8px 10px;text-align:center">Change</th>
+            <th style="padding:8px 10px;text-align:center">Flag</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>
+    </div>`;
+  },
 };
 
 // ============================================================
