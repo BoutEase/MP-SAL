@@ -1761,7 +1761,6 @@ Views.Payroll = {
       State.advances = advRes.data || [];
       let changed = 0;
       State.payroll.forEach(p => {
-        if (p.status === 'finalized') return;
         const empAdv = State.advances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
         const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
         if (advTotal !== p.total_advances) changed++;
@@ -1777,7 +1776,6 @@ Views.Payroll = {
     if (!State.payroll.length) { toast('No payroll loaded', 'error'); return; }
     let count = 0;
     State.payroll.forEach((p, i) => {
-      if (p.status === 'finalized') return;
       const emp = State.employees.find(e => e.emp_id === p.emp_id);
       if (!emp) return;
       const days = State.attendanceMap[p.emp_id];
