@@ -466,7 +466,19 @@ function getHolidays(year) {
     : rows;
   return {
     success: true,
-    data: data.map(function(r) { return { date: r[0], name: r[1] }; })
+    data: data.map(function(r) {
+      var d = r[0];
+      var dateStr;
+      if (d instanceof Date) {
+        var y = d.getFullYear();
+        var mo = String(d.getMonth() + 1).padStart(2, '0');
+        var dy = String(d.getDate()).padStart(2, '0');
+        dateStr = y + '-' + mo + '-' + dy;
+      } else {
+        dateStr = String(d);
+      }
+      return { date: dateStr, name: r[1] };
+    })
   };
 }
 
