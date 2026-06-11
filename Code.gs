@@ -703,7 +703,6 @@ function savePayroll(records) {
     });
 
     if (idx > 0) {
-      if (existing[idx][23] === 'finalized') return;
       sheet.getRange(idx + 1, 1, 1, row.length).setValues([row]);
       existing[idx] = row;
     } else {
@@ -786,7 +785,6 @@ function finalizePayroll(data) {
       ? Utilities.formatDate(payrollRows[i][2], 'Asia/Kolkata', 'yyyy-MM')
       : String(payrollRows[i][2]).substring(0, 7);
     if (rowMonth !== month) continue;
-    if (payrollRows[i][23] === 'finalized') continue;
 
     payrollSheet.getRange(i + 1, 24).setValue('finalized');
     payrollSheet.getRange(i + 1, 25).setValue(today);
