@@ -231,6 +231,12 @@ const Calc = {
 
     const holidayDates = new Set(holidays.map(h => h.date));
 
+    // Pre-index days by date for holiday neighbor checks
+    const presentStatuses = new Set(['FD', 'HD']);
+    const daysByDate = {};
+    for (const d of empAttendance.days) daysByDate[d.date] = d;
+    const sortedDates = Object.keys(daysByDate).sort();
+
     let fullDays = 0, halfDays = 0, absentDays = 0, weekOffDays = 0, holidayAbsent = 0;
     let otWeekdayMin = 0, otSundayMin = 0, otHolidayMin = 0, shortfallMin = 0;
 
@@ -256,8 +262,15 @@ const Calc = {
           const otHrs = day.totalHours + (addLunch ? lunchHrs : 0);
           otHolidayMin += Math.round(otHrs * 60);
         } else {
-          // Absent on holiday = paid
-          holidayAbsent++;
+          // Absent on holiday = paid only if present at least 1 day before AND after
+          const idx = sortedDates.indexOf(day.date);
+          const presentBefore = sortedDates.slice(0, idx).some(d => presentStatuses.has(daysByDate[d].status));
+          const presentAfter  = sortedDates.slice(idx + 1).some(d => presentStatuses.has(daysByDate[d].status));
+          if (presentBefore && presentAfter) {
+            holidayAbsent++;
+          } else {
+            absentDays++;
+          }
         }
       } else if (day.status === 'FD') {
         fullDays++;
