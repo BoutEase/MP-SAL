@@ -1919,10 +1919,9 @@ Views.Payroll = {
       const advRes = await API.call('getAdvances', advFilter);
       State.advances = advRes.data || [];
 
-      // Recalculate advance totals in draft records from live approved advances
+      // Recalculate advance totals from live approved advances
       // (advances may have been approved after the initial calculation ran)
       State.payroll.forEach(p => {
-        if (p.status === 'finalized') return;
         const empAdv = State.advances.filter(a => String(a.emp_id).trim() === String(p.emp_id).trim());
         const advTotal = empAdv.reduce((s, a) => s + Number(a.amount), 0);
         p.total_advances = advTotal;
