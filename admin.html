@@ -1474,7 +1474,9 @@ Views.Payroll = {
         tag = 'Short'; tagStyle = 'background:#fee2e2;color:#dc2626';
       }
     } else if (day.status === 'HD') {
-      shortfallMin = Math.round((9 - day.totalHours) * 60);
+      if (day.totalHours > 0 && day.totalHours < shortfallThresh) {
+        shortfallMin = Math.round((9 - day.totalHours) * 60);
+      }
       tag = '½ Day'; tagStyle = 'background:#fef3c7;color:#92400e';
     }
     return { otMin, shortfallMin, otEarn: (otMin/60)*hourly, sfDeduct: (shortfallMin/60)*hourly, tag, tagStyle, isSunday, isHoliday };
