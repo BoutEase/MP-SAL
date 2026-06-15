@@ -156,16 +156,18 @@ function getEmployeePayslip(data) {
     var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
       .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
     if (bonusRows.length) {
-      // Find the row matching this payroll month
-      var monthRow = bonusRows.find(function(r) {
-        return toDateStr(r[3]).substring(0, 7) === month;
-      });
-      if (monthRow) {
-        // Return prev balance (newBal - added) so frontend can display: Prev + This month = newBal
-        bonusBalance = (Number(monthRow[7]) || 0) - (Number(monthRow[5]) || 0);
+      // Sort all rows for this employee chronologically
+      bonusRows.sort(function(a, b) { return toDateStr(a[3]) > toDateStr(b[3]) ? 1 : -1; });
+      // Find the index of the row matching this payroll month
+      var monthIdx = -1;
+      for (var i = 0; i < bonusRows.length; i++) {
+        if (toDateStr(bonusRows[i][3]).substring(0, 7) === month) { monthIdx = i; break; }
+      }
+      if (monthIdx >= 0) {
+        // prevBal = previous row's newBal, or 0 if this is the first row
+        bonusBalance = monthIdx > 0 ? (Number(bonusRows[monthIdx - 1][7]) || 0) : 0;
       } else {
-        // Fallback: use latest row's newBal as prev (month not yet finalized)
-        bonusRows.sort(function(a, b) { return toDateStr(a[3]) > toDateStr(b[3]) ? 1 : -1; });
+        // Month not yet finalized — show latest running balance as prev
         bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
       }
     }
