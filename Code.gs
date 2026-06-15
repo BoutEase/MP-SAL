@@ -156,7 +156,7 @@ function getEmployeePayslip(data) {
     var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
       .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
     if (bonusRows.length) {
-      bonusRows.sort(function(a, b) { return String(a[3]) > String(b[3]) ? 1 : -1; });
+      bonusRows.sort(function(a, b) { return toDateStr(a[3]) > toDateStr(b[3]) ? 1 : -1; });
       bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
     }
   } catch(e) {}
