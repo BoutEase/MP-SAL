@@ -155,11 +155,16 @@ function getEmployeePayslip(data) {
   var allBonusRows = bonusSheet.getDataRange().getValues().slice(1)
     .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
   if (allBonusRows.length) {
-    var getBonusMonth = function(r) { return toDateStr(r[3]).substring(0, 7); };
-    allBonusRows.sort(function(a, b) { return getBonusMonth(a) > getBonusMonth(b) ? 1 : -1; });
+    var getBonusMonth = function(val) {
+      if (val instanceof Date) {
+        return val.getFullYear() + '-' + String(val.getMonth() + 1).padStart(2, '0');
+      }
+      return String(val).substring(0, 7);
+    };
+    allBonusRows.sort(function(a, b) { return getBonusMonth(a[3]) > getBonusMonth(b[3]) ? 1 : -1; });
     var monthIdx = -1;
     for (var bi = 0; bi < allBonusRows.length; bi++) {
-      if (getBonusMonth(allBonusRows[bi]) === month) { monthIdx = bi; break; }
+      if (getBonusMonth(allBonusRows[bi][3]) === month) { monthIdx = bi; break; }
     }
     if (monthIdx >= 0) {
       bonusBalance = monthIdx > 0 ? (Number(allBonusRows[monthIdx - 1][7]) || 0) : 0;
