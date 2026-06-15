@@ -156,18 +156,24 @@ function getEmployeePayslip(data) {
     var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
       .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
     if (bonusRows.length) {
-      // Sort all rows for this employee chronologically
-      bonusRows.sort(function(a, b) { return toDateStr(a[3]) > toDateStr(b[3]) ? 1 : -1; });
-      // Find the index of the row matching this payroll month
+      // Normalize month column same way as finalizePayroll does for payroll rows
+      bonusRows.sort(function(a, b) {
+        var ma = a[3] instanceof Date ? Utilities.formatDate(a[3], 'Asia/Kolkata', 'yyyy-MM') : String(a[3]).substring(0, 7);
+        var mb = b[3] instanceof Date ? Utilities.formatDate(b[3], 'Asia/Kolkata', 'yyyy-MM') : String(b[3]).substring(0, 7);
+        return ma > mb ? 1 : -1;
+      });
       var monthIdx = -1;
       for (var i = 0; i < bonusRows.length; i++) {
-        if (toDateStr(bonusRows[i][3]).substring(0, 7) === month) { monthIdx = i; break; }
+        var rowMonth = bonusRows[i][3] instanceof Date
+          ? Utilities.formatDate(bonusRows[i][3], 'Asia/Kolkata', 'yyyy-MM')
+          : String(bonusRows[i][3]).substring(0, 7);
+        if (rowMonth === month) { monthIdx = i; break; }
       }
       if (monthIdx >= 0) {
         // prevBal = previous row's newBal, or 0 if this is the first row
         bonusBalance = monthIdx > 0 ? (Number(bonusRows[monthIdx - 1][7]) || 0) : 0;
       } else {
-        // Month not yet finalized — show latest running balance as prev
+        // Month not yet finalized — show latest running balance
         bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
       }
     }
