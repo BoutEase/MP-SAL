@@ -151,33 +151,22 @@ function getEmployeePayslip(data) {
 
   // Get bonus balance for this specific month (prev balance before this month's contribution)
   var bonusBalance = 0;
-  try {
-    var bonusSheet = getSheet('Bonus');
-    var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
-      .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
-    if (bonusRows.length) {
-      // Normalize month column same way as finalizePayroll does for payroll rows
-      bonusRows.sort(function(a, b) {
-        var ma = a[3] instanceof Date ? Utilities.formatDate(a[3], 'Asia/Kolkata', 'yyyy-MM') : String(a[3]).substring(0, 7);
-        var mb = b[3] instanceof Date ? Utilities.formatDate(b[3], 'Asia/Kolkata', 'yyyy-MM') : String(b[3]).substring(0, 7);
-        return ma > mb ? 1 : -1;
-      });
-      var monthIdx = -1;
-      for (var i = 0; i < bonusRows.length; i++) {
-        var rowMonth = bonusRows[i][3] instanceof Date
-          ? Utilities.formatDate(bonusRows[i][3], 'Asia/Kolkata', 'yyyy-MM')
-          : String(bonusRows[i][3]).substring(0, 7);
-        if (rowMonth === month) { monthIdx = i; break; }
-      }
-      if (monthIdx >= 0) {
-        // prevBal = previous row's newBal, or 0 if this is the first row
-        bonusBalance = monthIdx > 0 ? (Number(bonusRows[monthIdx - 1][7]) || 0) : 0;
-      } else {
-        // Month not yet finalized — show latest running balance
-        bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
-      }
+  var bonusSheet = getSheet('Bonus');
+  var allBonusRows = bonusSheet.getDataRange().getValues().slice(1)
+    .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
+  if (allBonusRows.length) {
+    var getBonusMonth = function(r) { return toDateStr(r[3]).substring(0, 7); };
+    allBonusRows.sort(function(a, b) { return getBonusMonth(a) > getBonusMonth(b) ? 1 : -1; });
+    var monthIdx = -1;
+    for (var bi = 0; bi < allBonusRows.length; bi++) {
+      if (getBonusMonth(allBonusRows[bi]) === month) { monthIdx = bi; break; }
     }
-  } catch(e) {}
+    if (monthIdx >= 0) {
+      bonusBalance = monthIdx > 0 ? (Number(allBonusRows[monthIdx - 1][7]) || 0) : 0;
+    } else {
+      bonusBalance = Number(allBonusRows[allBonusRows.length - 1][7]) || 0;
+    }
+  }
 
   return { success: true, data: { payroll: pay, advances: advances, bonus_balance: bonusBalance, month: month } };
 }
