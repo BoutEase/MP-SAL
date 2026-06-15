@@ -683,6 +683,22 @@ const Calc = {
     for (const d of empAttendance.days) daysByDate[d.date] = d;
     const sortedDates = Object.keys(daysByDate).sort();
 
+    const hasPresenceNear = (holidayDate, side) => {
+      const idx = sortedDates.indexOf(holidayDate);
+      const candidates = side === 'before'
+        ? sortedDates.slice(0, idx).reverse()
+        : sortedDates.slice(idx + 1);
+      let checked = 0;
+      for (const d of candidates) {
+        const entry = daysByDate[d];
+        if (entry.dayName === 'Sunday') continue;
+        checked++;
+        if (presentStatuses.has(entry.status)) return true;
+        if (checked >= 5) break;
+      }
+      return checked === 0;
+    };
+
     let fullDays = 0, halfDays = 0, absentDays = 0, weekOffDays = 0, holidayAbsent = 0;
     let otWeekdayMin = 0, otSundayMin = 0, otHolidayMin = 0, shortfallMin = 0;
     let borderlineDays = 0;
@@ -713,11 +729,8 @@ const Calc = {
           const rawMin = (day.totalHours - (addLunch ? 0 : lunchHrs)) * 60;
           otHolidayMin += Math.floor(rawMin / otRound) * otRound;
         } else {
-          // Absent on holiday = paid only if present at least 1 day before AND after
-          const idx = sortedDates.indexOf(day.date);
-          const presentBefore = sortedDates.slice(0, idx).some(d => presentStatuses.has(daysByDate[d].status));
-          const presentAfter  = sortedDates.slice(idx + 1).some(d => presentStatuses.has(daysByDate[d].status));
-          if (presentBefore && presentAfter) {
+          // Paid holiday only if present within 5 working days before AND after
+          if (hasPresenceNear(day.date, 'before') && hasPresenceNear(day.date, 'after')) {
             holidayAbsent++;
           } else {
             absentDays++;
@@ -1443,7 +1456,7 @@ Views.Payroll = {
     } catch(e) { toast(e.message, 'error'); if (btn) btn.disabled = false; }
   },
 
-  _dayCalc(day, hourly, settings, holidayDates) {
+  _dayCalc(day, hourly, settings, holidayDates, paidHolidayDates) {
     const shortfallThresh = parseFloat(settings.SHORTFALL_THRESHOLD_HOURS || 8.5);
     const otMinHours      = parseFloat(settings.OT_MIN_HOURS || 10);
     const otRound         = parseInt(settings.OT_ROUND_MINUTES || 15);
@@ -1451,6 +1464,7 @@ Views.Payroll = {
     const lunchHrs        = parseFloat(settings.LUNCH_DURATION_HOURS || 1);
     const isSunday        = day.dayName === 'Sunday';
     const isHoliday       = holidayDates.has(day.date);
+    const isPaidHoliday   = paidHolidayDates ? paidHolidayDates.has(day.date) : isHoliday;
     let otMin = 0, shortfallMin = 0, tag = '', tagStyle = '';
 
     if (isSunday) {
@@ -1461,7 +1475,11 @@ Views.Payroll = {
       } else { tag = 'Off'; tagStyle = 'color:var(--muted)'; }
     } else if (isHoliday) {
       if (day.status === 'Absent') {
-        tag = 'Paid Holiday'; tagStyle = 'background:#dcfce7;color:#15803d';
+        if (isPaidHoliday) {
+          tag = 'Paid Holiday'; tagStyle = 'background:#dcfce7;color:#15803d';
+        } else {
+          tag = 'Absent'; tagStyle = 'color:var(--danger)';
+        }
       } else {
         const rawMin = (day.totalHours - (addLunch ? 0 : lunchHrs)) * 60;
         otMin = Math.floor(rawMin / otRound) * otRound;
@@ -1493,11 +1511,41 @@ Views.Payroll = {
     const noData       = !days || !days.length;
     const locked       = p.status === 'finalized';
 
+    // Pre-compute which holiday-absent days pass the 5-working-day neighbor check
+    const paidHolidayDates = (() => {
+      if (!days || !days.length) return new Set();
+      const presentStatuses = new Set(['FD', 'HD']);
+      const daysByDate = {};
+      for (const d of days) daysByDate[d.date] = d;
+      const sortedDates = Object.keys(daysByDate).sort();
+      const result = new Set();
+      for (const d of days) {
+        if (!holidayDates.has(d.date) || d.status !== 'Absent') continue;
+        const check = (side) => {
+          const idx = sortedDates.indexOf(d.date);
+          const candidates = side === 'before'
+            ? sortedDates.slice(0, idx).reverse()
+            : sortedDates.slice(idx + 1);
+          let checked = 0;
+          for (const dd of candidates) {
+            const entry = daysByDate[dd];
+            if (entry.dayName === 'Sunday') continue;
+            checked++;
+            if (presentStatuses.has(entry.status)) return true;
+            if (checked >= 5) break;
+          }
+          return checked === 0;
+        };
+        if (check('before') && check('after')) result.add(d.date);
+      }
+      return result;
+    })();
+
     const statusColor  = { FD:'var(--success)', HD:'var(--warning)', Absent:'var(--danger)', 'Week Off':'var(--muted)' };
     const statusOpts   = ['FD','HD','Absent','Week Off'].map(s => `<option value="${s}">${s}</option>`).join('');
 
     const dayRows = noData ? '' : days.map((day, di) => {
-      const c   = this._dayCalc(day, hourly, State.settings, holidayDates);
+      const c   = this._dayCalc(day, hourly, State.settings, holidayDates, paidHolidayDates);
       const hrs = Math.floor(day.totalHours);
       const mns = Math.round((day.totalHours % 1) * 60);
       const col = statusColor[day.status] || 'var(--text)';
@@ -1651,12 +1699,45 @@ Views.Payroll = {
     if (!days) return;
     const day = days[di];
 
+    // Recompute paidHolidayDates with current UI state for the edited row
+    const presentStatuses = new Set(['FD', 'HD']);
+    const liveDays = days.map((d, i) => {
+      if (i !== di) return d;
+      const s = document.getElementById(`ds-${idx}-${di}`)?.value || d.status;
+      const hh = parseInt(document.getElementById(`dh-${idx}-${di}`)?.value || 0);
+      const mm = parseInt(document.getElementById(`dm-${idx}-${di}`)?.value || 0);
+      return { ...d, status: s, totalHours: hh + mm/60 };
+    });
+    const daysByDate = {};
+    for (const d of liveDays) daysByDate[d.date] = d;
+    const sortedDates = Object.keys(daysByDate).sort();
+    const paidHolidayDates = new Set();
+    for (const d of liveDays) {
+      if (!holidayDates.has(d.date) || d.status !== 'Absent') continue;
+      const checkSide = (side) => {
+        const idx2 = sortedDates.indexOf(d.date);
+        const candidates = side === 'before'
+          ? sortedDates.slice(0, idx2).reverse()
+          : sortedDates.slice(idx2 + 1);
+        let checked = 0;
+        for (const dd of candidates) {
+          const entry = daysByDate[dd];
+          if (entry.dayName === 'Sunday') continue;
+          checked++;
+          if (presentStatuses.has(entry.status)) return true;
+          if (checked >= 5) break;
+        }
+        return checked === 0;
+      };
+      if (checkSide('before') && checkSide('after')) paidHolidayDates.add(d.date);
+    }
+
     const status = document.getElementById(`ds-${idx}-${di}`)?.value || day.status;
     const h = parseInt(document.getElementById(`dh-${idx}-${di}`)?.value || 0);
     const m = parseInt(document.getElementById(`dm-${idx}-${di}`)?.value || 0);
     const fakeDay = { ...day, status, totalHours: h + m/60 };
 
-    const c = this._dayCalc(fakeDay, hourly, State.settings, holidayDates);
+    const c = this._dayCalc(fakeDay, hourly, State.settings, holidayDates, paidHolidayDates);
     const otEl  = document.getElementById(`dot-${idx}-${di}`);
     const sfEl  = document.getElementById(`dsf-${idx}-${di}`);
     const amEl  = document.getElementById(`dam-${idx}-${di}`);

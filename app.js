@@ -237,6 +237,25 @@ const Calc = {
     for (const d of empAttendance.days) daysByDate[d.date] = d;
     const sortedDates = Object.keys(daysByDate).sort();
 
+    // Returns true if at least 1 FD/HD exists within 5 non-Sunday working days
+    // on the given side ('before' or 'after') of the holiday date.
+    const hasPresenceNear = (holidayDate, side) => {
+      const idx = sortedDates.indexOf(holidayDate);
+      const candidates = side === 'before'
+        ? sortedDates.slice(0, idx).reverse()
+        : sortedDates.slice(idx + 1);
+      let checked = 0;
+      for (const d of candidates) {
+        const entry = daysByDate[d];
+        if (entry.dayName === 'Sunday') continue; // skip week-offs
+        checked++;
+        if (presentStatuses.has(entry.status)) return true;
+        if (checked >= 5) break;
+      }
+      // If fewer than 5 days exist on this side, waive the gate (start/end of month)
+      return checked === 0;
+    };
+
     let fullDays = 0, halfDays = 0, absentDays = 0, weekOffDays = 0, holidayAbsent = 0;
     let otWeekdayMin = 0, otSundayMin = 0, otHolidayMin = 0, shortfallMin = 0;
 
@@ -262,11 +281,8 @@ const Calc = {
           const otHrs = day.totalHours + (addLunch ? lunchHrs : 0);
           otHolidayMin += Math.round(otHrs * 60);
         } else {
-          // Absent on holiday = paid only if present at least 1 day before AND after
-          const idx = sortedDates.indexOf(day.date);
-          const presentBefore = sortedDates.slice(0, idx).some(d => presentStatuses.has(daysByDate[d].status));
-          const presentAfter  = sortedDates.slice(idx + 1).some(d => presentStatuses.has(daysByDate[d].status));
-          if (presentBefore && presentAfter) {
+          // Paid holiday only if present within 5 working days before AND after
+          if (hasPresenceNear(day.date, 'before') && hasPresenceNear(day.date, 'after')) {
             holidayAbsent++;
           } else {
             absentDays++;
