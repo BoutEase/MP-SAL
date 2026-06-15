@@ -155,16 +155,10 @@ function getEmployeePayslip(data) {
   var allBonusRows = bonusSheet.getDataRange().getValues().slice(1)
     .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
   if (allBonusRows.length) {
-    var getBonusMonth = function(val) {
-      if (val instanceof Date) {
-        return val.getFullYear() + '-' + String(val.getMonth() + 1).padStart(2, '0');
-      }
-      return String(val).substring(0, 7);
-    };
-    allBonusRows.sort(function(a, b) { return getBonusMonth(a[3]) > getBonusMonth(b[3]) ? 1 : -1; });
+    allBonusRows.sort(function(a, b) { return toDateStr(a[3]).substring(0,7) > toDateStr(b[3]).substring(0,7) ? 1 : -1; });
     var monthIdx = -1;
     for (var bi = 0; bi < allBonusRows.length; bi++) {
-      if (getBonusMonth(allBonusRows[bi][3]) === month) { monthIdx = bi; break; }
+      if (toDateStr(allBonusRows[bi][3]).substring(0, 7) === month) { monthIdx = bi; break; }
     }
     if (monthIdx >= 0) {
       bonusBalance = monthIdx > 0 ? (Number(allBonusRows[monthIdx - 1][7]) || 0) : 0;
@@ -468,21 +462,23 @@ function rejectEmployeeRequest(requestId) {
   return { success: true };
 }
 
+// ---- Shared helpers ----
+
+function toDateStr(val) {
+  if (val instanceof Date) {
+    var y = val.getFullYear();
+    var mo = String(val.getMonth() + 1).padStart(2, '0');
+    var dy = String(val.getDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + dy;
+  }
+  return String(val);
+}
+
 // ---- Holidays ----
 
 function getHolidays(year) {
   const sheet = getSheet('Holidays');
   const rows = sheet.getDataRange().getValues().slice(1).filter(function(r) { return r[0]; });
-
-  function toDateStr(val) {
-    if (val instanceof Date) {
-      var y = val.getFullYear();
-      var mo = String(val.getMonth() + 1).padStart(2, '0');
-      var dy = String(val.getDate()).padStart(2, '0');
-      return y + '-' + mo + '-' + dy;
-    }
-    return String(val);
-  }
 
   const data = year
     ? rows.filter(function(r) { return toDateStr(r[0]).startsWith(String(year)); })
