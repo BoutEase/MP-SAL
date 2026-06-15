@@ -149,15 +149,25 @@ function getEmployeePayslip(data) {
     }).data;
   }
 
-  // Get latest bonus balance from Bonus sheet
+  // Get bonus balance for this specific month (prev balance before this month's contribution)
   var bonusBalance = 0;
   try {
     var bonusSheet = getSheet('Bonus');
     var bonusRows = bonusSheet.getDataRange().getValues().slice(1)
       .filter(function(r) { return r[0] && String(r[1]) === String(empId); });
     if (bonusRows.length) {
-      bonusRows.sort(function(a, b) { return toDateStr(a[3]) > toDateStr(b[3]) ? 1 : -1; });
-      bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
+      // Find the row matching this payroll month
+      var monthRow = bonusRows.find(function(r) {
+        return toDateStr(r[3]).substring(0, 7) === month;
+      });
+      if (monthRow) {
+        // Return prev balance (newBal - added) so frontend can display: Prev + This month = newBal
+        bonusBalance = (Number(monthRow[7]) || 0) - (Number(monthRow[5]) || 0);
+      } else {
+        // Fallback: use latest row's newBal as prev (month not yet finalized)
+        bonusRows.sort(function(a, b) { return toDateStr(a[3]) > toDateStr(b[3]) ? 1 : -1; });
+        bonusBalance = Number(bonusRows[bonusRows.length - 1][7]) || 0;
+      }
     }
   } catch(e) {}
 
