@@ -3437,7 +3437,10 @@ Views.Payments = {
         );
         this._negConvertedDetails = new Map();
         const advDone = negEmps.filter((r, i) => {
-          const adv = (checks[i].data || []).find(a => (String(a.created_by || '')).trim() === 'Previous Month Bal');
+          const adv = (checks[i].data || []).find(a =>
+            (String(a.created_by || '')).trim() === 'Previous Month Bal' &&
+            (!sample || !sample.adv_start_date || a.date >= sample.adv_start_date)
+          );
           if (adv) { this._negConvertedDetails.set(r.emp_id, { amount: adv.amount, date: adv.date }); }
           return !!adv;
         }).map(r => r.emp_id);
