@@ -1418,7 +1418,7 @@ Views.Payroll = {
         date,
         amount,
         status:      'Approved',
-        created_by:  'Previous Month Bal'
+        created_by:  'Previous Month Bal:' + (State.currentMonth || '')
       });
       p.total_advances = (p.total_advances || 0) + amount;
       p.net_pay = 0;
@@ -1444,7 +1444,7 @@ Views.Payroll = {
         date,
         amount,
         status:      'Approved',
-        created_by:  'Previous Month Bal'
+        created_by:  'Previous Month Bal:' + (State.currentMonth || '')
       });
       p.total_advances = (p.total_advances || 0) + amount;
       p.net_pay = 0;
@@ -3436,10 +3436,10 @@ Views.Payments = {
           negEmps.map(r => API.call('getAdvances', { emp_id: r.emp_id, status: 'Approved' }))
         );
         this._negConvertedDetails = new Map();
+        const monthMarker = 'Previous Month Bal:' + month;
         const advDone = negEmps.filter((r, i) => {
           const adv = (checks[i].data || []).find(a =>
-            (String(a.created_by || '')).trim() === 'Previous Month Bal' &&
-            (!sample || !sample.adv_start_date || a.date >= sample.adv_start_date)
+            (String(a.created_by || '')).trim() === monthMarker
           );
           if (adv) { this._negConvertedDetails.set(r.emp_id, { amount: adv.amount, date: adv.date }); }
           return !!adv;
